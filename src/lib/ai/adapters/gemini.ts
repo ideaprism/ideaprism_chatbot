@@ -8,6 +8,11 @@
  * - 도구 명세는 parametersJsonSchema 로 JSON Schema 를 그대로 넘길 수 있다
  *   (Gemini 고유 Schema 형식으로 변환할 필요가 없다)
  * - 캐싱은 자동(암시적)이라 우리가 지정하지 않는다
+ * - 도구를 호출한 턴을 되돌려 줄 때는 조각(part)에 붙은 thoughtSignature 를
+ *   그대로 살려야 한다. 없으면 400:
+ *     "Function call is missing a thought_signature in functionCall parts"
+ *   그래서 모델이 낸 조각을 통째로 raw 에 담아 두고 다음 턴에 그대로 다시 넣는다.
+ *   (Claude의 생각 블록, OpenAI의 추론 항목과 같은 이유)
  */
 
 import "server-only";
@@ -49,6 +54,12 @@ function toContents(request: AiTurnRequest): Content[] {
     }
 
     if (message.role === "assistant") {
+      // 모델이 냈던 조각을 그대로 되돌려 준다 (thoughtSignature 포함)
+      if (Array.isArray(message.raw) && message.raw.length > 0) {
+        contents.push({ role: "model", parts: message.raw as Part[] });
+        continue;
+      }
+
       const parts: Part[] = [];
       if (message.content) parts.push({ text: message.content });
       for (const call of message.toolCalls ?? []) {
@@ -114,7 +125,8 @@ export function createGeminiAdapter(): AiAdapter {
       });
 
       let text = "";
-      const toolCalls: AiToolCall[] = [];
+      /** 모델이 낸 조각 전부 — thoughtSignature 를 잃지 않도록 그대로 모은다 */
+      const modelParts: Part[] = [];
       const usage = { input: 0, output: 0, cacheRead: 0 };
 
       for await (const chunk of stream) {
@@ -124,15 +136,7 @@ export function createGeminiAdapter(): AiAdapter {
           onEvent({ type: "text", delta: piece });
         }
 
-        for (const call of chunk.functionCalls ?? []) {
-          if (!call.name) continue;
-          toolCalls.push({
-            // Gemini는 호출 식별자를 주지 않아 우리가 번호를 붙인다
-            id: call.id ?? `gem_${toolCalls.length}`,
-            name: call.name,
-            input: call.args ?? {},
-          });
-        }
+        modelParts.push(...(chunk.candidates?.[0]?.content?.parts ?? []));
 
         const meta = chunk.usageMetadata;
         if (meta) {
@@ -143,11 +147,25 @@ export function createGeminiAdapter(): AiAdapter {
         }
       }
 
+      // 도구 호출은 모아 둔 조각에서 뽑는다 (되돌려 줄 조각과 짝이 어긋나지 않게)
+      const toolCalls: AiToolCall[] = [];
+      for (const part of modelParts) {
+        const call = part.functionCall;
+        if (!call?.name) continue;
+        toolCalls.push({
+          // Gemini는 호출 식별자를 주지 않아 우리가 번호를 붙인다
+          id: call.id ?? `gem_${toolCalls.length}`,
+          name: call.name,
+          input: call.args ?? {},
+        });
+      }
+
       return {
         stopReason: toolCalls.length > 0 ? "tool_use" : "end",
         text,
         toolCalls,
         usage,
+        raw: modelParts,
       };
     },
   };
