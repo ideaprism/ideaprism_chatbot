@@ -11,6 +11,8 @@
 
 import "server-only";
 
+import { buildKiprisQuery, describeFormula } from "./kipris/formula";
+import { KiprisError, searchKipris } from "./kipris/service";
 import { advanceStage, STAGES, STAGE_IDS, type StageId } from "./quest";
 import {
   availableValues,
@@ -25,6 +27,7 @@ import { getSearch, putSearch } from "./search/store";
 import { upsertNote } from "./session";
 import { isToolName, type ToolName } from "./tools";
 import type { ChatEvent, NoteEntry, SessionState } from "@/types/chat";
+import type { Patent, PatentSnapshot } from "@/types/kipris";
 import type {
   InventionRow,
   LookupItem,
@@ -116,6 +119,35 @@ function describeChoices(snapshot: SearchSnapshot): string {
     line("- 문제유형", snapshot.availableProblemTags),
     line("- SCAMPER", snapshot.availableScamper),
   ].join("\n");
+}
+
+/** 특허 조회 결과를 AI에게 넘길 형태로 정리 — 목록에 없는 특허는 존재하지 않는다 */
+function describePatents(query: string, totalCount: number, patents: Patent[]): string {
+  if (patents.length === 0) {
+    return [
+      `검색식 "${query}" 로는 특허가 한 건도 나오지 않았습니다.`,
+      "0건이라고 해서 곧바로 '새로운 발명'이라고 단정하지 마세요.",
+      "검색식이 너무 좁을 수 있으니, 갈래를 하나 빼고 다시 만들어 보자고 학생에게 제안하세요.",
+    ].join("\n");
+  }
+
+  const lines = [
+    `검색식: ${query}`,
+    `전체 ${totalCount}건 중 ${patents.length}건을 가져왔습니다. 아래 목록에 있는 특허만 근거로 삼으세요.`,
+    "",
+    ...patents.map((patent, index) =>
+      [
+        `${index + 1}. ${patent.inventionTitle}`,
+        `   출원번호 ${patent.applicationNumber || "미상"} · ${patent.applicationDate || "일자 미상"} · ${patent.registerStatus}`,
+        patent.applicantName ? `   출원인: ${patent.applicantName}` : null,
+        patent.abstract ? `   요약: ${patent.abstract.slice(0, 200)}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    ),
+  ];
+
+  return lines.join("\n");
 }
 
 function summarizeInvention(row: InventionRow, grades: LookupItem[]): string {
@@ -341,6 +373,86 @@ export async function executeTool(
         result: `상세 카드를 띄웠습니다.\n${summarizeInvention(row, loaded.grades)}`,
         session: next,
         events: [{ type: "state", session: next }],
+        isError: false,
+      };
+    }
+
+    // ── 특허 ────────────────────────────────────────────────
+    case "generate_kipris_query": {
+      const built = buildKiprisQuery({
+        object: asStringArray(args.object) ?? [],
+        problem: asStringArray(args.problem),
+        solution: asStringArray(args.solution),
+        method: asStringArray(args.method),
+        effect: asStringArray(args.effect),
+      });
+
+      if (!built.query) {
+        return keep(
+          built.advice ??
+            "검색식을 만들지 못했습니다. 최소한 '발명 대상' 낱말은 넣어야 합니다.",
+          true,
+        );
+      }
+
+      // 검색식만 만든 단계 — 아직 조회 전이라 건수는 알 수 없다
+      const nextSnapshot: PatentSnapshot = { query: built.query, totalCount: -1, loadedCount: 0 };
+      const next: SessionState = { ...session, patent: nextSnapshot };
+
+      return {
+        result: `${describeFormula(built)}\n\n이 검색식으로 조회하려면 search_kipris를 호출하세요.`,
+        session: next,
+        events: [{ type: "state", session: next }],
+        isError: false,
+      };
+    }
+
+    case "search_kipris": {
+      const query =
+        typeof args.query === "string" && args.query.trim()
+          ? args.query.trim()
+          : (session.patent?.query ?? "");
+
+      if (!query) {
+        return keep(
+          "검색식이 없습니다. 먼저 generate_kipris_query로 검색식을 만드세요.",
+          true,
+        );
+      }
+
+      let found;
+      try {
+        found = await searchKipris(query);
+      } catch (error) {
+        const message =
+          error instanceof KiprisError
+            ? error.message
+            : "특허 조회 중 문제가 생겼습니다.";
+        return keep(
+          `${message} 학생에게 상황을 솔직히 말하고, 잠시 뒤 다시 해 보자고 안내하세요.`,
+          true,
+        );
+      }
+
+      const nextSnapshot: PatentSnapshot = {
+        query,
+        totalCount: found.totalCount,
+        loadedCount: found.patents.length,
+      };
+      const next: SessionState = { ...session, patent: nextSnapshot };
+
+      return {
+        result: describePatents(query, found.totalCount, found.patents),
+        session: next,
+        events: [
+          {
+            type: "patents",
+            query,
+            patents: found.patents,
+            totalCount: found.totalCount,
+          },
+          { type: "state", session: next },
+        ],
         isError: false,
       };
     }

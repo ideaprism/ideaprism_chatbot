@@ -13,6 +13,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { emotionNames, getCharacter, type CharacterId } from "./characters";
 import { STAGES, type QuestState } from "./quest";
+import type { PatentSnapshot } from "@/types/kipris";
 import type { SearchSnapshot } from "@/types/search";
 
 /** 캐릭터와 무관하게 항상 지켜야 하는 2.0 운영 규칙 */
@@ -80,6 +81,8 @@ export interface TurnContext {
   noteDigest: string | null;
   /** 우측 패널에 지금 떠 있는 검색 상태 */
   search: SearchSnapshot | null;
+  /** 특허 패널에 지금 떠 있는 검색식·결과 */
+  patent: PatentSnapshot | null;
 }
 
 /**
@@ -127,6 +130,21 @@ export function buildTurnBriefing(ctx: TurnContext): string {
       "  ※ 학생이 직접 필터를 눌렀을 수도 있다. 위 상태가 지금 화면 그대로다. " +
         "같은 검색어를 다시 검색하지 말고, 필터만 바꾸려면 apply_filters를 쓴다. " +
         "정확한 건수가 필요하면 get_statistics로 확인한다.",
+    );
+  }
+
+  if (ctx.patent) {
+    const { query, totalCount, loadedCount } = ctx.patent;
+    lines.push("");
+    lines.push("특허 패널에 지금 떠 있는 것:");
+    lines.push(`- 검색식: ${query}`);
+    lines.push(
+      totalCount < 0
+        ? "- 아직 조회하지 않았다. search_kipris로 실제 조회를 해야 결과를 말할 수 있다."
+        : `- 조회 결과 전체 ${totalCount}건 중 ${loadedCount}건 표시 중`,
+    );
+    lines.push(
+      "  ※ 학생이 패널에서 검색식을 직접 고쳐 다시 조회했을 수도 있다. 위가 지금 화면이다.",
     );
   }
 

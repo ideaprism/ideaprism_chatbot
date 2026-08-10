@@ -87,6 +87,7 @@ export async function POST(request: Request) {
     offTopicCount: session.offTopicCount,
     noteDigest: noteDigest(session.notes),
     search: session.search,
+    patent: session.patent,
   };
 
   // 첫 인사는 학생 발화 없이 캐릭터가 먼저 말을 걸기 때문에, 이력이 assistant로

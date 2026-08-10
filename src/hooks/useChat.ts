@@ -7,6 +7,7 @@ import { STAGES } from "@/lib/quest";
 import { createSession } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
 import type { ChatEvent, ChatMessage, SessionState } from "@/types/chat";
+import type { Patent } from "@/types/kipris";
 import type { InventionRow, LookupItem } from "@/types/search";
 
 /** 검색 결과 원본 — 브라우저 메모리에만 둔다(최대 500건, 저장소에 넣기엔 크다) */
@@ -55,6 +56,7 @@ export function useChat() {
   const [error, setError] = useState<string | null>(null);
   const [handoff, setHandoff] = useState<Handoff | null>(null);
   const [results, setResults] = useState<SearchResults | null>(null);
+  const [patents, setPatents] = useState<Patent[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKind | null>(null);
 
   /** 스트리밍 도중에도 최신 값을 읽어야 해서 ref로 함께 들고 간다 */
@@ -189,6 +191,10 @@ export function useChat() {
                 // 새로 검색했으면 우측을 검색 결과로 돌린다(PRD S-3)
                 setActivePanel("search");
                 break;
+              case "patents":
+                setPatents(event.patents);
+                setActivePanel("patent");
+                break;
               case "state":
                 syncSession(event.session);
                 break;
@@ -278,9 +284,28 @@ export function useChat() {
     setHandoff(null);
     setError(null);
     setResults(null);
+    setPatents([]);
     setActivePanel(null);
     void run(null, fresh);
   }, [run, syncMessages]);
+
+  /**
+   * 특허 패널에서 검색식을 고쳐 다시 조회했을 때.
+   * AI를 거치지 않으므로 호출 비용이 들지 않고, 바뀐 결과는 세션에 실려
+   * 다음 턴에 특허 탐정도 같은 화면을 보게 된다.
+   */
+  const applyPatentResult = useCallback(
+    (query: string, list: Patent[], totalCount: number) => {
+      setPatents(list);
+      const current = sessionRef.current;
+      if (!current) return;
+      syncSession({
+        ...current,
+        patent: { query, totalCount, loadedCount: list.length },
+      });
+    },
+    [syncSession],
+  );
 
   const dismissHandoff = useCallback(() => setHandoff(null), []);
 
@@ -338,6 +363,7 @@ export function useChat() {
     error,
     handoff,
     results,
+    patents,
     activePanel,
     setActivePanel,
     send,
@@ -346,5 +372,6 @@ export function useChat() {
     toggleFilter,
     clearFilters,
     focusInvention,
+    applyPatentResult,
   };
 }

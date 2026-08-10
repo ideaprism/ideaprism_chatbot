@@ -14,6 +14,7 @@ export function createSession(): SessionState {
     offTopicCount: 0,
     aiCalls: 0,
     search: null,
+    patent: null,
   };
 }
 

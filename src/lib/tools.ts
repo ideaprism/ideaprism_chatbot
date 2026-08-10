@@ -30,6 +30,8 @@ export const IMPLEMENTED_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
   "apply_filters",
   "get_statistics",
   "show_invention",
+  "generate_kipris_query",
+  "search_kipris",
   "update_note",
   "complete_stage",
 ]);
@@ -116,22 +118,40 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
   generate_kipris_query: {
     name: "generate_kipris_query",
     description:
-      "아이디어 요지로 KIPRIS(특허청) 검색식을 만든다. 5단계 선행기술조사에서 사용한다. " +
-      "검색식은 프로그램이 만들어 주므로, 너는 직접 검색식 문법을 작성하지 않는다.",
+      "KIPRIS(특허청) 검색식을 만든다. 5단계 선행기술조사에서 사용한다. " +
+      "너는 낱말만 갈래별로 고르고, 검색식 문법(+, *, 괄호)은 프로그램이 조립한다. " +
+      "같은 갈래 안에는 비슷한 말(동의어)을 함께 넣는다. 예: object=['우산','양산']. " +
+      "갈래가 많을수록 결과가 줄어드니, 처음에는 대상과 문제 정도로 시작하는 게 좋다.",
     input_schema: {
       type: "object",
       properties: {
-        ideaSummary: {
-          type: "string",
-          description: "아이디어의 핵심 요지. 기술적 특징이 드러나게 2~3문장.",
-        },
-        keywords: {
+        object: {
           type: "array",
           items: { type: "string" },
-          description: "핵심 키워드 목록 (선택). 예: ['우산','빗물','배수']",
+          description: "발명 대상 — 무엇에 관한 발명인가. 예: ['우산','양산']",
+        },
+        problem: {
+          type: "array",
+          items: { type: "string" },
+          description: "문제 — 무엇이 불편한가. 예: ['빗물','물방울']",
+        },
+        solution: {
+          type: "array",
+          items: { type: "string" },
+          description: "해결 수단 — 어떤 장치·구조로 푸는가. 예: ['받이','수거']",
+        },
+        method: {
+          type: "array",
+          items: { type: "string" },
+          description: "방법·원리 (선택)",
+        },
+        effect: {
+          type: "array",
+          items: { type: "string" },
+          description: "효과 (선택)",
         },
       },
-      required: ["ideaSummary"],
+      required: ["object"],
       additionalProperties: false,
     },
   },
@@ -139,12 +159,16 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
   search_kipris: {
     name: "search_kipris",
     description:
-      "만들어진 검색식으로 실제 특허를 조회하고 결과를 우측 특허 패널에 띄운다. " +
-      "조회 결과에 나온 특허만 근거로 삼는다. 결과에 없는 특허를 지어내면 안 된다.",
+      "검색식으로 실제 특허를 조회하고 결과를 우측 특허 패널에 띄운다. " +
+      "조회 결과에 나온 특허만 근거로 삼는다. 결과에 없는 특허를 지어내면 안 된다. " +
+      "학생이 패널에서 검색식을 직접 고쳐 다시 조회했을 수도 있으니, 현재 검색식을 확인하고 쓴다.",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "generate_kipris_query로 만든 검색식" },
+        query: {
+          type: "string",
+          description: "generate_kipris_query가 돌려준 검색식. 직접 지어내지 않는다.",
+        },
       },
       required: ["query"],
       additionalProperties: false,

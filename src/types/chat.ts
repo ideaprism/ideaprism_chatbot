@@ -1,6 +1,7 @@
 import type { CharacterId } from "@/lib/characters";
 import type { QuestState, StageId } from "@/lib/quest";
 import type { ToolName } from "@/lib/tools";
+import type { Patent, PatentSnapshot } from "@/types/kipris";
 import type { InventionRow, LookupItem, SearchSnapshot } from "@/types/search";
 
 /** 발명노트 한 줄 (PRD F-6) */
@@ -25,6 +26,8 @@ export interface SessionState {
    * 500건 원본은 브라우저 메모리와 서버 캐시에 각각 있고, 이 요약만 매 요청 오간다.
    */
   search: SearchSnapshot | null;
+  /** 특허 조회 요약 (특허 목록 원본은 브라우저 메모리에 둔다) */
+  patent: PatentSnapshot | null;
 }
 
 /** 화면에 보이는 대화 한 줄 */
@@ -69,5 +72,7 @@ export type ChatEvent =
       grades: LookupItem[];
       categories: LookupItem[];
     }
+  /** 특허 조회 결과 */
+  | { type: "patents"; query: string; patents: Patent[]; totalCount: number }
   | { type: "done"; usage?: { input: number; output: number; cacheRead: number } }
   | { type: "error"; message: string };

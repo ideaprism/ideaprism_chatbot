@@ -6,6 +6,7 @@ import { Composer } from "@/components/Composer";
 import { HandoffOverlay } from "@/components/HandoffOverlay";
 import { MessageList } from "@/components/MessageList";
 import { NotePanel } from "@/components/note/NotePanel";
+import { PatentPanel } from "@/components/patent/PatentPanel";
 import { ProgressRail } from "@/components/ProgressRail";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
@@ -19,6 +20,7 @@ export default function Home() {
     error,
     handoff,
     results,
+    patents,
     activePanel,
     setActivePanel,
     send,
@@ -27,6 +29,7 @@ export default function Home() {
     toggleFilter,
     clearFilters,
     focusInvention,
+    applyPatentResult,
   } = useChat();
 
   if (!session) {
@@ -52,6 +55,13 @@ export default function Home() {
       />
     ) : activePanel === "note" ? (
       <NotePanel session={session} />
+    ) : activePanel === "patent" && session.patent ? (
+      <PatentPanel
+        key={session.patent.query}
+        snapshot={session.patent}
+        patents={patents}
+        onResult={applyPatentResult}
+      />
     ) : undefined;
 
   return (
@@ -60,7 +70,7 @@ export default function Home() {
         quest={session.quest}
         activePanel={activePanel}
         onSelectPanel={setActivePanel}
-        available={{ search: canSearch, note: hasNote, patent: false }}
+        available={{ search: canSearch, note: hasNote, patent: Boolean(session.patent) }}
       />
 
       <WorkspaceShell
