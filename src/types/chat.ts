@@ -1,6 +1,7 @@
 import type { CharacterId } from "@/lib/characters";
 import type { QuestState, StageId } from "@/lib/quest";
 import type { ToolName } from "@/lib/tools";
+import type { InventionRow, LookupItem, SearchSnapshot } from "@/types/search";
 
 /** 발명노트 한 줄 (PRD F-6) */
 export interface NoteEntry {
@@ -19,6 +20,11 @@ export interface SessionState {
   offTopicCount: number;
   /** 지금까지 쓴 AI 호출 수 — 비용 가드 */
   aiCalls: number;
+  /**
+   * 검색 요약 (행 데이터는 여기 없다).
+   * 500건 원본은 브라우저 메모리와 서버 캐시에 각각 있고, 이 요약만 매 요청 오간다.
+   */
+  search: SearchSnapshot | null;
 }
 
 /** 화면에 보이는 대화 한 줄 */
@@ -49,5 +55,12 @@ export type ChatEvent =
   | { type: "tool"; name: ToolName; status: "start" | "done"; note?: string }
   | { type: "handoff"; from: CharacterId; to: CharacterId; stage: StageId }
   | { type: "state"; session: SessionState }
+  /** 검색 결과 원본 — 검색을 새로 할 때만 한 번 내려온다(최대 500건) */
+  | {
+      type: "results";
+      rows: InventionRow[];
+      grades: LookupItem[];
+      categories: LookupItem[];
+    }
   | { type: "done"; usage?: { input: number; output: number; cacheRead: number } }
   | { type: "error"; message: string };

@@ -13,6 +13,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { emotionNames, getCharacter, type CharacterId } from "./characters";
 import { STAGES, type QuestState } from "./quest";
+import type { SearchSnapshot } from "@/types/search";
 
 /** 캐릭터와 무관하게 항상 지켜야 하는 2.0 운영 규칙 */
 function operatingRules(characterId: CharacterId): string {
@@ -77,6 +78,8 @@ export interface TurnContext {
   offTopicCount: number;
   /** 지금까지 노트에 쌓인 요지 — 대화가 길어져도 잃지 않도록 매 턴 다시 넣는다 */
   noteDigest: string | null;
+  /** 우측 패널에 지금 떠 있는 검색 상태 */
+  search: SearchSnapshot | null;
 }
 
 /**
@@ -103,6 +106,28 @@ export function buildTurnBriefing(ctx: TurnContext): string {
     lines.push("");
     lines.push("지금까지 발명노트에 적힌 내용:");
     lines.push(ctx.noteDigest);
+  }
+
+  if (ctx.search) {
+    const { keyword, totalCount, loadedCount, filters, focusedId } = ctx.search;
+    const active = [
+      filters.grades.length ? `학년=${filters.grades.join("/")}` : null,
+      filters.problemTags.length ? `문제유형=${filters.problemTags.join("/")}` : null,
+      filters.scamper.length ? `SCAMPER=${filters.scamper.join("/")}` : null,
+    ].filter(Boolean);
+
+    lines.push("");
+    lines.push("우측 화면에 지금 떠 있는 검색:");
+    lines.push(
+      `- 검색어 "${keyword}" · 전체 ${totalCount}건 중 ${loadedCount}건 적재` +
+        (active.length ? ` · 필터: ${active.join(", ")}` : " · 필터 없음"),
+    );
+    if (focusedId) lines.push(`- 상세 카드로 띄운 발명 id: ${focusedId}`);
+    lines.push(
+      "  ※ 학생이 직접 필터를 눌렀을 수도 있다. 위 상태가 지금 화면 그대로다. " +
+        "같은 검색어를 다시 검색하지 말고, 필터만 바꾸려면 apply_filters를 쓴다. " +
+        "정확한 건수가 필요하면 get_statistics로 확인한다.",
+    );
   }
 
   const retries = ctx.quest.retries[ctx.quest.currentStage] ?? 0;

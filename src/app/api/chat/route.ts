@@ -84,6 +84,7 @@ export async function POST(request: Request) {
     nickname: session.nickname,
     offTopicCount: session.offTopicCount,
     noteDigest: noteDigest(session.notes),
+    search: session.search,
   };
 
   // 첫 인사는 학생 발화 없이 캐릭터가 먼저 말을 걸기 때문에, 이력이 assistant로
@@ -172,7 +173,7 @@ export async function POST(request: Request) {
             const toolName = isToolName(call.name) ? call.name : null;
             if (toolName) send({ type: "tool", name: toolName, status: "start" });
 
-            const outcome = executeTool(call.name, call.input, session);
+            const outcome = await executeTool(call.name, call.input, session);
             session = outcome.session;
             for (const extra of outcome.events) send(extra);
 

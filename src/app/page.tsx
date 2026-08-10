@@ -6,12 +6,25 @@ import { Composer } from "@/components/Composer";
 import { HandoffOverlay } from "@/components/HandoffOverlay";
 import { MessageList } from "@/components/MessageList";
 import { ProgressRail } from "@/components/ProgressRail";
+import { SearchPanel } from "@/components/search/SearchPanel";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
 import { useChat } from "@/hooks/useChat";
 
 export default function Home() {
-  const { session, messages, streaming, error, handoff, send, restart, dismissHandoff } =
-    useChat();
+  const {
+    session,
+    messages,
+    streaming,
+    error,
+    handoff,
+    results,
+    send,
+    restart,
+    dismissHandoff,
+    toggleFilter,
+    clearFilters,
+    focusInvention,
+  } = useChat();
 
   if (!session) {
     return (
@@ -48,6 +61,17 @@ export default function Home() {
 
             <Composer onSend={send} disabled={streaming} />
           </div>
+        }
+        panel={
+          session.search && results ? (
+            <SearchPanel
+              snapshot={session.search}
+              results={results}
+              onToggleFilter={toggleFilter}
+              onClearFilters={clearFilters}
+              onFocus={focusInvention}
+            />
+          ) : undefined
         }
       />
 

@@ -7,6 +7,16 @@ import { STAGES } from "@/lib/quest";
 import { createSession } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
 import type { ChatEvent, ChatMessage, SessionState } from "@/types/chat";
+import type { InventionRow, LookupItem } from "@/types/search";
+
+/** 검색 결과 원본 — 브라우저 메모리에만 둔다(최대 500건, 저장소에 넣기엔 크다) */
+export interface SearchResults {
+  rows: InventionRow[];
+  grades: LookupItem[];
+  categories: LookupItem[];
+}
+
+export type FilterKind = "grades" | "problemTags" | "scamper";
 
 const STORAGE_KEY = "ideaprism:session";
 /** 서버로 되돌려 보낼 최근 대화 턴 수 */
@@ -27,6 +37,7 @@ export function useChat() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [handoff, setHandoff] = useState<Handoff | null>(null);
+  const [results, setResults] = useState<SearchResults | null>(null);
 
   /** 스트리밍 도중에도 최신 값을 읽어야 해서 ref로 함께 들고 간다 */
   const sessionRef = useRef<SessionState | null>(null);
@@ -140,6 +151,13 @@ export function useChat() {
               case "handoff":
                 setHandoff({ from: event.from, to: event.to });
                 break;
+              case "results":
+                setResults({
+                  rows: event.rows,
+                  grades: event.grades,
+                  categories: event.categories,
+                });
+                break;
               case "state":
                 syncSession(event.session);
                 break;
@@ -213,10 +231,71 @@ export function useChat() {
     syncMessages([]);
     setHandoff(null);
     setError(null);
+    setResults(null);
     void run(null, fresh);
   }, [run, syncMessages]);
 
   const dismissHandoff = useCallback(() => setHandoff(null), []);
 
-  return { session, messages, streaming, error, handoff, send, restart, dismissHandoff };
+  /**
+   * 필터 칩 클릭 — 서버 왕복 없이 즉시 반영한다(PRD 8장: 체감 0.1초).
+   * 바뀐 필터는 세션에 담기므로, 다음 대화 요청 때 AI도 같은 상태를 보게 된다
+   * (PRD S-4: 클릭과 채팅 명령이 양쪽으로 동기화).
+   */
+  const toggleFilter = useCallback(
+    (kind: FilterKind, value: string) => {
+      const current = sessionRef.current;
+      if (!current?.search) return;
+
+      const selected = current.search.filters[kind];
+      const nextValues = selected.includes(value)
+        ? selected.filter((item) => item !== value)
+        : [...selected, value];
+
+      syncSession({
+        ...current,
+        search: {
+          ...current.search,
+          filters: { ...current.search.filters, [kind]: nextValues },
+        },
+      });
+    },
+    [syncSession],
+  );
+
+  const clearFilters = useCallback(() => {
+    const current = sessionRef.current;
+    if (!current?.search) return;
+    syncSession({
+      ...current,
+      search: {
+        ...current.search,
+        filters: { grades: [], problemTags: [], scamper: [] },
+      },
+    });
+  }, [syncSession]);
+
+  const focusInvention = useCallback(
+    (id: string | null) => {
+      const current = sessionRef.current;
+      if (!current?.search) return;
+      syncSession({ ...current, search: { ...current.search, focusedId: id } });
+    },
+    [syncSession],
+  );
+
+  return {
+    session,
+    messages,
+    streaming,
+    error,
+    handoff,
+    results,
+    send,
+    restart,
+    dismissHandoff,
+    toggleFilter,
+    clearFilters,
+    focusInvention,
+  };
 }

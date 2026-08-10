@@ -26,11 +26,13 @@ export type ToolName =
 
 /** 현재 실제로 동작하는 도구 (제작 단계가 올라가면 여기에 추가) */
 export const IMPLEMENTED_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
+  "search_inventions",
+  "apply_filters",
+  "get_statistics",
+  "show_invention",
   "update_note",
   "complete_stage",
 ]);
-
-const SCAMPER_CODES = ["S", "C", "A", "M", "P", "E", "R"] as const;
 
 export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
   search_inventions: {
@@ -58,25 +60,26 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
     description:
       "이미 검색해 둔 결과에 필터를 건다. 서버를 다시 부르지 않고 즉시 반영된다. " +
       "'초등부만 볼까?', '결합 기법 쓴 것만 보자' 같은 대화에 사용한다. " +
-      "비우면(빈 배열) 해당 필터가 해제된다.",
+      "값은 반드시 search_inventions가 돌려준 '고를 수 있는 값' 목록에서만 쓴다. " +
+      "목록에 없는 값은 무시되고, 어떤 값이 무시됐는지 알려 준다. " +
+      "빈 배열을 주면 그 필터가 해제된다. 생략한 항목은 지금 상태를 유지한다.",
     input_schema: {
       type: "object",
       properties: {
         grades: {
           type: "array",
           items: { type: "string" },
-          description: "학년 필터. 예: ['초등부'], ['중등부','고등부']",
+          description: "학년 필터. 검색 결과가 알려 준 학년 이름만 사용한다.",
         },
         problemTags: {
           type: "array",
           items: { type: "string" },
-          description: "문제유형 태그 필터",
+          description: "문제유형 태그 필터. 검색 결과가 알려 준 태그만 사용한다.",
         },
         scamper: {
           type: "array",
-          items: { type: "string", enum: [...SCAMPER_CODES] },
-          description:
-            "SCAMPER 기법 코드. S=대체, C=결합, A=응용, M=변형, P=용도변경, E=제거, R=재배열",
+          items: { type: "string" },
+          description: "SCAMPER 태그 필터. 검색 결과가 알려 준 값만 사용한다.",
         },
       },
       required: [],
