@@ -42,8 +42,15 @@ export interface ChatMessage {
 
 export interface ChatRequest {
   session: SessionState;
-  /** 학생이 보낸 말. 첫 인사(캐릭터가 먼저 말 걸기)는 null. */
+  /** 학생이 보낸 말. 캐릭터가 먼저 말 거는 턴(첫 인사·배턴터치)은 null. */
   message: string | null;
+  /**
+   * message가 null일 때 어떤 상황인지.
+   * opening = 세션 시작, handoff = 배턴터치 직후 새 캐릭터 등장
+   */
+  intent?: "opening" | "handoff";
+  /** 배턴터치일 때 물러난 캐릭터 (등장 대사에 쓰인다) */
+  handoffFrom?: CharacterId | null;
   /** 최근 대화 이력 (오래된 턴은 클라이언트가 잘라 보낸다) */
   history: Array<{ role: "user" | "assistant"; text: string }>;
 }

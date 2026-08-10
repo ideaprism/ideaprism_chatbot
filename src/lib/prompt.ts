@@ -180,6 +180,25 @@ export function openingTurn(ctx: TurnContext): Anthropic.MessageParam {
 }
 
 /**
+ * 배턴터치 직후: 앞 캐릭터가 소개하고 물러난 자리에 새 캐릭터가 등장한다.
+ * 학생이 아직 아무 말도 하지 않은 상태이므로 등장 인사부터 시작해야 한다.
+ */
+export function handoffTurn(
+  ctx: TurnContext,
+  from: CharacterId | null,
+): Anthropic.MessageParam {
+  const who = from ? getCharacter(from).name : "앞 캐릭터";
+  return {
+    role: "user",
+    content:
+      `(${who}가 너를 소개하고 물러났다. 학생은 아직 아무 말도 하지 않았다. ` +
+      "짧게 등장 인사를 건네고, 이번 단계에서 할 일을 자연스럽게 꺼내라. " +
+      "앞 캐릭터가 이미 한 이야기를 되풀이하지 말 것.)\n\n" +
+      buildTurnBriefing(ctx),
+  };
+}
+
+/**
  * 대화 이력을 Messages API가 받아들이는 형태로 맞춘다.
  * 첫 인사 때문에 이력이 assistant로 시작할 수 있는데, 그대로 보내면 400이 난다.
  */

@@ -18,6 +18,20 @@ export interface SearchResults {
 
 export type FilterKind = "grades" | "problemTags" | "scamper";
 
+interface RunOptions {
+  intent?: "opening" | "handoff";
+  handoffFrom?: CharacterId | null;
+  /** 배턴터치 자동 이어달리기 깊이 — 무한 연쇄 방지 */
+  depth?: number;
+}
+
+/** run 은 배턴터치 때 자기 자신을 다시 부르므로 타입을 미리 못박아 둔다 */
+type RunFn = (
+  userText: string | null,
+  baseSession: SessionState,
+  options?: RunOptions,
+) => Promise<void>;
+
 const STORAGE_KEY = "ideaprism:session";
 /** 서버로 되돌려 보낼 최근 대화 턴 수 */
 const HISTORY_TURNS = 24;
@@ -62,8 +76,9 @@ export function useChat() {
     }
   }, []);
 
-  const run = useCallback(
-    async (userText: string | null, baseSession: SessionState) => {
+  const run: RunFn = useCallback(
+    async (userText, baseSession, options = {}) => {
+      const depth = options.depth ?? 0;
       setError(null);
       setStreaming(true);
 
@@ -94,11 +109,20 @@ export function useChat() {
         syncMessages(working);
       };
 
+      /** 이번 턴에 담당이 바뀌었으면, 새 캐릭터가 이어서 등장하도록 자동으로 한 턴 더 돈다 */
+      let handoffFrom: CharacterId | null = null;
+
       try {
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session: baseSession, message: userText, history }),
+          body: JSON.stringify({
+            session: baseSession,
+            message: userText,
+            intent: options.intent,
+            handoffFrom: options.handoffFrom ?? null,
+            history,
+          }),
         });
 
         if (!response.ok || !response.body) {
@@ -150,6 +174,7 @@ export function useChat() {
                 break;
               case "handoff":
                 setHandoff({ from: event.from, to: event.to });
+                handoffFrom = event.from;
                 break;
               case "results":
                 setResults({
@@ -173,8 +198,23 @@ export function useChat() {
         patch({ pending: false });
       } catch (cause) {
         patch({ pending: false });
+        handoffFrom = null;
         setError(cause instanceof Error ? cause.message : "알 수 없는 오류가 발생했습니다.");
       } finally {
+        // 이어달리기를 할 거면 입력창을 계속 잠가 둔다(깜빡임 방지)
+        if (!handoffFrom) setStreaming(false);
+      }
+
+      // 배턴터치: 앞 캐릭터의 퇴장 인사가 끝났으니 새 캐릭터가 등장 인사를 한다.
+      // 학생이 뭔가 입력할 때까지 기다리지 않는다 (PRD F-2 배턴터치 연출).
+      const nextSession = sessionRef.current;
+      if (handoffFrom && nextSession && depth < 2) {
+        await run(null, nextSession, {
+          intent: "handoff",
+          handoffFrom,
+          depth: depth + 1,
+        });
+      } else if (handoffFrom) {
         setStreaming(false);
       }
     },

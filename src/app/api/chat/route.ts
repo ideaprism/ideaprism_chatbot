@@ -13,6 +13,7 @@ import { loadPersona } from "@/lib/personas";
 import {
   buildSystemBlocks,
   createEmotionParser,
+  handoffTurn,
   normalizeHistory,
   openingTurn,
   userTurnWithBriefing,
@@ -96,11 +97,16 @@ export async function POST(request: Request) {
       .map((turn) => ({ role: turn.role, content: turn.text })),
   );
 
+  const opener =
+    body.intent === "handoff"
+      ? handoffTurn(ctx, body.handoffFrom ?? null)
+      : openingTurn(ctx);
+
   const messages: Anthropic.MessageParam[] = [
     ...history,
     body.message && body.message.trim()
       ? userTurnWithBriefing(body.message.trim(), ctx)
-      : openingTurn(ctx),
+      : opener,
   ];
 
   const system = buildSystemBlocks(characterId, persona);

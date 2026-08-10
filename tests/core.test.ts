@@ -82,6 +82,48 @@ test("5단계 완주 후에는 더 올라가지 않는다", () => {
   assert.ok(result.state.completed[5]);
 });
 
+test("0단계부터 5단계까지 완주하면 캐릭터가 두 번 바뀐다", () => {
+  const artifacts: Record<number, unknown> = {
+    0: { nickname: "민준", interests: ["우산"], matchedCharacter: "jiyou" },
+    1: { problemArea: "우산", observations: ["실내에 들어가면 바닥이 젖는다"] },
+    2: {
+      problemStatement: "비 오는 날 실내에서 우산의 빗물이 바닥을 적신다",
+      target: "실내에 들어오는 사람",
+      pain: "바닥이 젖어 미끄럽다",
+    },
+    3: { techniquesTried: ["C", "M"], candidates: ["빗물받이 우산", "접이식 커버"] },
+    4: {
+      title: "빗물 받는 우산",
+      summary: "우산대 아래 물받이가 빗물을 모은다",
+      howItWorks: "우산을 접는 힘으로 물받이가 펼쳐져 빗물을 담는다",
+      differentiator: "기존 커버와 달리 따로 씌울 필요가 없다",
+    },
+    5: {
+      kiprisQuery: "우산*빗물*받이",
+      similarPatents: ["10-2020-0001234"],
+      differentiation: "물받이가 우산을 접는 동작만으로 자동 전개된다",
+    },
+  };
+
+  let state = initialQuestState(0);
+  const handoffs: Array<{ at: number; to: string }> = [];
+
+  for (const stage of [0, 1, 2, 3, 4, 5] as const) {
+    const result = advanceStage(state, stage, artifacts[stage], 0);
+    assert.equal(result.ok, true, `${stage}단계 승급 실패: ${result.message}`);
+    if (result.characterChanged) handoffs.push({ at: stage, to: result.nextCharacter });
+    state = result.state;
+  }
+
+  // 0→1 에서 지도교사 → 지유, 4→5 에서 지유 → 특허탐정
+  assert.deepEqual(handoffs, [
+    { at: 0, to: "jiyou" },
+    { at: 4, to: "detective" },
+  ]);
+  assert.equal(state.currentStage, 5);
+  assert.equal(Object.keys(state.completed).length, 6, "6단계 산출물이 모두 쌓인다");
+});
+
 test("모든 단계에 담당 캐릭터와 완료 조건이 정의돼 있다", () => {
   for (const stage of Object.values(STAGES)) {
     assert.ok(stage.character, `${stage.id}단계 담당 캐릭터 누락`);
