@@ -4,6 +4,14 @@ import type { ToolName } from "@/lib/tools";
 import type { Patent, PatentSnapshot } from "@/types/kipris";
 import type { InventionRow, LookupItem, SearchSnapshot } from "@/types/search";
 
+/** 한 단계에서 쓴 토큰과 호출 수 */
+export interface StageUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  calls: number;
+}
+
 /** 발명노트 한 줄 (PRD F-6) */
 export interface NoteEntry {
   stage: StageId;
@@ -21,6 +29,11 @@ export interface SessionState {
   offTopicCount: number;
   /** 지금까지 쓴 AI 호출 수 — 비용 가드 */
   aiCalls: number;
+  /**
+   * 단계별 토큰 사용량 (PRD 7장 "단계별 사용량 계측").
+   * 정식판에서 단계마다 다른 모델을 쓸지 데이터로 판단하기 위한 기록.
+   */
+  stageUsage: Record<string, StageUsage>;
   /**
    * 검색 요약 (행 데이터는 여기 없다).
    * 500건 원본은 브라우저 메모리와 서버 캐시에 각각 있고, 이 요약만 매 요청 오간다.

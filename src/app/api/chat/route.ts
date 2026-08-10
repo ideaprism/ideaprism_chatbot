@@ -13,9 +13,11 @@ import { saveNote } from "@/lib/notes/repository";
 import { loadPersona } from "@/lib/personas";
 import {
   buildSystemBlocks,
+  compactHistory,
   createEmotionParser,
   handoffTurn,
   normalizeHistory,
+  OFF_TOPIC_LIMIT,
   openingTurn,
   userTurnWithBriefing,
   type TurnContext,
@@ -24,6 +26,7 @@ import { STAGES } from "@/lib/quest";
 import { isSessionState, noteDigest } from "@/lib/session";
 import { executeTool } from "@/lib/tool-handlers";
 import { isToolName, toolsForStage } from "@/lib/tools";
+import { mergeStageUsage } from "@/lib/usage";
 import type { ChatEvent, ChatRequest, SessionState } from "@/types/chat";
 
 // personas/*.txt 를 파일로 읽으므로 Node 런타임이 필요하다 (Edge 불가)
@@ -60,10 +63,11 @@ export async function POST(request: Request) {
 
   let session: SessionState = body.session;
 
+  // 비용 가드 (PRD 8장). Anthropic 콘솔의 월 한도와 이중으로 건다.
   if (session.aiCalls >= MAX_AI_CALLS_PER_SESSION) {
     return fail(
-      `이번 세션의 대화 한도(${MAX_AI_CALLS_PER_SESSION}회)에 도달했습니다. ` +
-        "새로 시작하면 계속할 수 있어요.",
+      `이번 대화에서 쓸 수 있는 횟수(${MAX_AI_CALLS_PER_SESSION}번)를 다 썼어요. ` +
+        "지금까지 적은 발명노트는 그대로 있으니, 노트를 확인하거나 새로 시작해 주세요.",
       429,
     );
   }
@@ -90,13 +94,19 @@ export async function POST(request: Request) {
     patent: session.patent,
   };
 
+  // 이번 턴 대본에 "발명 이야기로 되돌리기" 안내가 들어갔는가.
+  // 들어갔다면 안내를 했다는 뜻이므로, 이탈 횟수는 0에서 다시 센다. (PRD F-8)
+  const redirected = session.offTopicCount >= OFF_TOPIC_LIMIT;
+
   // 첫 인사는 학생 발화 없이 캐릭터가 먼저 말을 걸기 때문에, 이력이 assistant로
   // 시작할 수 있다. Messages API는 첫 메시지가 user여야 하므로 시동 문구를 복원한다.
   const history = normalizeHistory(
-    (body.history ?? [])
-      .slice(-MAX_HISTORY_TURNS)
-      .filter((turn) => turn.text.trim().length > 0)
-      .map((turn) => ({ role: turn.role, content: turn.text })),
+    compactHistory(
+      (body.history ?? [])
+        .filter((turn) => turn.text.trim().length > 0)
+        .map((turn) => ({ role: turn.role, content: turn.text })),
+      MAX_HISTORY_TURNS,
+    ),
   );
 
   const opener =
@@ -118,12 +128,21 @@ export async function POST(request: Request) {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: ChatEvent) => controller.enqueue(encoder.encode(sse(event)));
       const emotionParser = createEmotionParser();
       let emotionSent = false;
+      /** 학생 화면에 실제로 글자가 나갔는가 */
+      let textSent = false;
 
-      const emitEmotions = (emotions: string[]) => {
-        for (const raw of emotions) {
+      const send = (event: ChatEvent) => {
+        if (event.type === "text" && event.delta) textSent = true;
+        controller.enqueue(encoder.encode(sse(event)));
+      };
+      /** 이번 턴에 AI가 표시한 주제 이탈 횟수 (PRD F-8) */
+      let offTopicSeen = 0;
+
+      const consume = (parsed: { emotions: string[]; offTopic: number }) => {
+        offTopicSeen += parsed.offTopic;
+        for (const raw of parsed.emotions) {
           if (emotionSent) continue;
           emotionSent = true;
           send({
@@ -138,8 +157,16 @@ export async function POST(request: Request) {
       /** 이번 턴에 노트나 단계가 바뀌었는가 — 바뀐 턴에만 저장한다 */
       let noteDirty = false;
 
+      /** 도구를 계속 부르다 상한에 걸려 끝났는가 (= 마무리 말이 없는 상태) */
+      let ranOutOfRounds = false;
+
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          // 도구 루프 안에서도 세션 상한을 지킨다 (한 턴에 여러 번 부르므로)
+          if (session.aiCalls >= MAX_AI_CALLS_PER_SESSION) {
+            ranOutOfRounds = true;
+            break;
+          }
           session = { ...session, aiCalls: session.aiCalls + 1 };
 
           const turn = client.messages.stream({
@@ -157,9 +184,9 @@ export async function POST(request: Request) {
               event.type === "content_block_delta" &&
               event.delta.type === "text_delta"
             ) {
-              const { emotions, text } = emotionParser.push(event.delta.text);
-              emitEmotions(emotions);
-              if (text) send({ type: "text", delta: text });
+              const parsed = emotionParser.push(event.delta.text);
+              consume(parsed);
+              if (parsed.text) send({ type: "text", delta: parsed.text });
             }
           }
 
@@ -209,11 +236,23 @@ export async function POST(request: Request) {
 
           // 병렬 호출도 결과는 반드시 한 개의 사용자 메시지에 모아 돌려준다
           messages.push({ role: "user", content: results });
+
+          if (round === MAX_TOOL_ROUNDS - 1) ranOutOfRounds = true;
         }
 
         const tail = emotionParser.flush();
-        emitEmotions(tail.emotions);
+        consume(tail);
         if (tail.text) send({ type: "text", delta: tail.text });
+
+        // 도구만 계속 부르다 끝나면 학생 화면에 아무 말도 남지 않는다.
+        // 빈 말풍선 대신 상황을 알려 준다.
+        if (ranOutOfRounds && !textSent) {
+          send({
+            type: "text",
+            delta:
+              "음… 자료를 찾다가 시간이 좀 걸렸어. 방금 한 이야기를 한 번만 더 말해 줄래?",
+          });
+        }
 
         if (!emotionSent) {
           send({
@@ -222,6 +261,13 @@ export async function POST(request: Request) {
             character: characterId,
           });
         }
+
+        // 주제 이탈 카운터 갱신. 환기를 이미 안내한 턴이었다면 0에서 다시 센다.
+        session = {
+          ...session,
+          offTopicCount: (redirected ? 0 : session.offTopicCount) + offTopicSeen,
+          stageUsage: mergeStageUsage(session.stageUsage, stage.id, usage),
+        };
 
         // 발명노트 저장은 뒷일이다. 실패해도 대화를 끊지 않고 서버 로그에만 남긴다.
         if (noteDirty) {

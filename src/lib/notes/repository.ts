@@ -50,6 +50,8 @@ export async function saveNote(session: SessionState): Promise<SaveResult> {
               }
             : null,
           ai_calls: session.aiCalls,
+          // 단계별 토큰 사용량 (PRD 7장) — 정식판 모델 전략의 근거 자료
+          token_usage: session.stageUsage ?? {},
         },
         { onConflict: "session_id" },
       );

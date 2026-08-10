@@ -13,6 +13,7 @@ export function createSession(): SessionState {
     notes: [],
     offTopicCount: 0,
     aiCalls: 0,
+    stageUsage: {},
     search: null,
     patent: null,
   };

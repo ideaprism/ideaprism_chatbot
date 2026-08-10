@@ -13,7 +13,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { advanceStage, initialQuestState, STAGES } from "../src/lib/quest";
-import { createEmotionParser, normalizeHistory, SESSION_OPENING_CUE } from "../src/lib/prompt";
+import {
+  COMPACTED_MARKER,
+  compactHistory,
+  createEmotionParser,
+  normalizeHistory,
+  SESSION_OPENING_CUE,
+} from "../src/lib/prompt";
+import { mergeStageUsage, totalUsage } from "../src/lib/usage";
 import { normalizeEmotion } from "../src/lib/characters";
 import { sanitizePersona } from "../src/lib/personas";
 
@@ -137,18 +144,21 @@ test("모든 단계에 담당 캐릭터와 완료 조건이 정의돼 있다", (
 function feed(chunks: string[]) {
   const parser = createEmotionParser();
   const emotions: string[] = [];
+  let offTopic = 0;
   let text = "";
 
   for (const chunk of chunks) {
     const out = parser.push(chunk);
     emotions.push(...out.emotions);
+    offTopic += out.offTopic;
     text += out.text;
   }
   const tail = parser.flush();
   emotions.push(...tail.emotions);
+  offTopic += tail.offTopic;
   text += tail.text;
 
-  return { emotions, text };
+  return { emotions, offTopic, text };
 }
 
 test("맨 앞 감정 태그를 걷어낸다", () => {
@@ -187,7 +197,71 @@ test("알 수 없는 감정 이름은 기본값으로 교정된다", () => {
   assert.equal(normalizeEmotion("teacher", null), "welcome");
 });
 
-// ── 3. 대화 이력 정규화 ──────────────────────────────────────
+test("주제 이탈 표식은 화면에 새지 않고 횟수로만 센다", () => {
+  const { emotions, offTopic, text } = feed([
+    "[감정:playful] 게임 얘기 재밌지! ",
+    "[이탈]",
+    "근데 우산 얘기 마저 해볼까?",
+  ]);
+
+  assert.deepEqual(emotions, ["playful"]);
+  assert.equal(offTopic, 1);
+  assert.ok(!text.includes("[이탈]"), "표식이 학생 화면에 보이면 안 된다");
+  assert.equal(text, " 게임 얘기 재밌지! 근데 우산 얘기 마저 해볼까?");
+});
+
+test("발명 이야기면 이탈로 세지 않는다", () => {
+  const { offTopic } = feed(["[감정:coaching] 좋은 생각이야. 더 말해줄래?"]);
+  assert.equal(offTopic, 0);
+});
+
+// ── 3. 대화 압축 ─────────────────────────────────────────────
+
+test("대화가 짧으면 그대로 둔다", () => {
+  const history = [
+    { role: "user" as const, content: "안녕" },
+    { role: "assistant" as const, content: "반가워" },
+  ];
+  assert.deepEqual(compactHistory(history, 10), history);
+});
+
+test("대화가 길어지면 오래된 턴을 잘라내고 표시를 남긴다", () => {
+  const history = Array.from({ length: 30 }, (_, index) => ({
+    role: (index % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+    content: `${index}번째 말`,
+  }));
+
+  const compacted = compactHistory(history, 10);
+
+  assert.equal(compacted.length, 11, "표시 1줄 + 최근 10턴");
+  assert.equal(compacted[0].content, COMPACTED_MARKER);
+  assert.equal(compacted[1].content, "20번째 말", "최근 10턴만 남는다");
+  assert.equal(compacted.at(-1)?.content, "29번째 말");
+});
+
+// ── 4. 단계별 사용량 ─────────────────────────────────────────
+
+test("같은 단계에서 여러 번 부르면 사용량이 쌓인다", () => {
+  let usage = mergeStageUsage({}, 1, { input: 100, output: 20, cacheRead: 0 });
+  usage = mergeStageUsage(usage, 1, { input: 30, output: 10, cacheRead: 90 });
+
+  assert.deepEqual(usage["1"], { input: 130, output: 30, cacheRead: 90, calls: 2 });
+});
+
+test("단계마다 따로 쌓이고 합계도 낼 수 있다", () => {
+  let usage = mergeStageUsage({}, 0, { input: 10, output: 5, cacheRead: 0 });
+  usage = mergeStageUsage(usage, 3, { input: 40, output: 15, cacheRead: 20 });
+
+  assert.equal(Object.keys(usage).length, 2);
+  assert.deepEqual(totalUsage(usage), {
+    input: 50,
+    output: 20,
+    cacheRead: 20,
+    calls: 2,
+  });
+});
+
+// ── 5. 대화 이력 정규화 ──────────────────────────────────────
 
 test("이력이 assistant로 시작하면 시동 문구를 앞에 복원한다", () => {
   // 첫 인사는 학생 발화 없이 시작하므로 이런 이력이 실제로 만들어진다

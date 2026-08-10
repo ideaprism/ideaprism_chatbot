@@ -50,6 +50,8 @@ function operatingRules(characterId: CharacterId): string {
 - 실명, 학교명, 연락처, 주소 등 개인정보를 묻지 않는다. 별명만 쓴다.
   학생이 먼저 말해도 노트에 적지 않고, 별명으로 부르자고 부드럽게 안내한다.
 - 발명과 무관한 주제로 새면 한두 번은 가볍게 받아 주되, 자연스럽게 발명 이야기로 되돌린다.
+  이때 답변 어딘가에 [이탈] 이라고 한 번 적는다. 화면에는 보이지 않고,
+  몇 번 샜는지 세는 데만 쓰인다. (발명 이야기면 절대 적지 않는다)
 - 폭력·혐오·성적 내용 등 부적절한 입력에는 휘말리지 않고, 차분히 화제를 돌린다.
 - 의학·법률적 확답을 하지 않는다. "가능성이 있다" 수준으로 말한다.`;
 }
@@ -157,11 +159,12 @@ export function buildTurnBriefing(ctx: TurnContext): string {
     );
   }
 
-  if (ctx.offTopicCount >= 3) {
+  if (ctx.offTopicCount >= OFF_TOPIC_LIMIT) {
     lines.push("");
     lines.push(
-      "※ 학생이 발명과 먼 이야기를 3번 이상 했다. 지도교사 선생님을 부르듯 " +
-        "부드럽게 환기하고, 원래 하던 발명 이야기로 자연스럽게 되돌린다.",
+      `※ 학생이 발명과 먼 이야기를 ${ctx.offTopicCount}번 했다. 지도교사 선생님을 부르듯 ` +
+        "부드럽게 환기하고, 원래 하던 발명 이야기로 자연스럽게 되돌린다. " +
+        "혼내지 말고, 지금까지 한 것을 짚어 주며 다시 흐름을 잡아 준다.",
     );
   }
 
@@ -188,6 +191,31 @@ export function userTurnWithBriefing(
  */
 export const SESSION_OPENING_CUE =
   "(학생이 방금 접속했다. 아직 아무 말도 하지 않았다. 먼저 인사를 건네고 대화를 시작하라.)";
+
+/** 발명 이야기로 되돌리기를 안내할 이탈 횟수 (PRD F-8) */
+export const OFF_TOPIC_LIMIT = 3;
+
+/** 앞선 대화를 잘라낸 자리에 남기는 표시 */
+export const COMPACTED_MARKER =
+  "(여기까지의 대화는 발명노트 요지로 대신합니다. 노트 내용은 아래 운영지침에 있습니다.)";
+
+/**
+ * 대화 압축 (PRD F-7).
+ *
+ * 오래된 턴은 잘라내되, 잘렸다는 사실과 "노트를 보라"는 안내를 남긴다.
+ * 진짜 기억은 매 턴 다시 넣어 주는 발명노트 요지가 담당하므로,
+ * 여기서 따로 AI를 불러 요약하지 않는다(비용도, 지연도 늘리지 않는다).
+ */
+export function compactHistory(
+  history: Anthropic.MessageParam[],
+  keepTurns: number,
+): Anthropic.MessageParam[] {
+  if (history.length <= keepTurns) return history;
+
+  const kept = history.slice(-keepTurns);
+  // 잘라낸 뒤 첫 메시지가 assistant면 normalizeHistory가 앞에 user를 채워 준다
+  return [{ role: "user", content: COMPACTED_MARKER }, ...kept];
+}
 
 /** 세션 첫 화면: 학생 입력 없이 캐릭터가 먼저 말을 걸도록 하는 시동 메시지 */
 export function openingTurn(ctx: TurnContext): Anthropic.MessageParam {
@@ -228,50 +256,71 @@ export function normalizeHistory(
 }
 
 const EMOTION_TAG = /\[\s*감정\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*\]/;
+const OFFTOPIC_TAG = /\[\s*이탈\s*\]/;
 /** 태그가 스트림 조각 사이에서 잘릴 수 있으므로, 이만큼은 붙들고 기다린다 */
 const TAG_LOOKAHEAD = 32;
 
+export interface ParsedChunk {
+  emotions: string[];
+  /** 학생이 발명과 먼 이야기를 했다고 AI가 표시한 횟수 */
+  offTopic: number;
+  text: string;
+}
+
 /**
- * 스트림에서 [감정:이름] 태그를 걷어낸다.
+ * 스트림에서 구조화 표식을 걷어낸다.
+ *   [감정:이름] — 화면이 캐릭터 그림으로 바꾼다
+ *   [이탈]      — 주제 이탈 카운터를 올린다 (PRD F-8)
  *
- * 태그는 보통 맨 앞에 오지만, 도구 호출을 사이에 두고 여러 번 나올 수 있어
- * 위치를 가리지 않고 제거한다. 조각 경계에서 태그가 잘리는 경우를 대비해
+ * 표식은 보통 맨 앞에 오지만, 도구 호출을 사이에 두고 여러 번 나올 수 있어
+ * 위치를 가리지 않고 제거한다. 조각 경계에서 잘리는 경우를 대비해
  * 여는 대괄호 이후는 잠시 붙들었다가 흘려보낸다.
  */
 export function createEmotionParser() {
   let buffer = "";
 
-  function drain(final: boolean): { emotions: string[]; text: string } {
+  function drain(final: boolean): ParsedChunk {
     const emotions: string[] = [];
+    let offTopic = 0;
 
     for (;;) {
-      const match = buffer.match(EMOTION_TAG);
-      if (!match || match.index === undefined) break;
-      emotions.push(match[1]);
-      buffer = buffer.slice(0, match.index) + buffer.slice(match.index + match[0].length);
+      const emotion = buffer.match(EMOTION_TAG);
+      if (emotion?.index !== undefined) {
+        emotions.push(emotion[1]);
+        buffer =
+          buffer.slice(0, emotion.index) + buffer.slice(emotion.index + emotion[0].length);
+        continue;
+      }
+      const drift = buffer.match(OFFTOPIC_TAG);
+      if (drift?.index !== undefined) {
+        offTopic++;
+        buffer = buffer.slice(0, drift.index) + buffer.slice(drift.index + drift[0].length);
+        continue;
+      }
+      break;
     }
 
     if (final) {
       const text = buffer;
       buffer = "";
-      return { emotions, text };
+      return { emotions, offTopic, text };
     }
 
-    // 아직 닫히지 않은 '[' 뒤쪽은 태그일 수 있으니 남겨 둔다
+    // 아직 닫히지 않은 '[' 뒤쪽은 표식일 수 있으니 남겨 둔다
     const open = buffer.lastIndexOf("[");
     const hold =
       open !== -1 && buffer.length - open <= TAG_LOOKAHEAD ? open : buffer.length;
 
     const text = buffer.slice(0, hold);
     buffer = buffer.slice(hold);
-    return { emotions, text };
+    return { emotions, offTopic, text };
   }
 
   return {
-    push: (chunk: string) => {
+    push: (chunk: string): ParsedChunk => {
       buffer += chunk;
       return drain(false);
     },
-    flush: () => drain(true),
+    flush: (): ParsedChunk => drain(true),
   };
 }

@@ -23,8 +23,8 @@ export async function GET() {
     : { ok: false, detail: ".env.local 에 ANTHROPIC_API_KEY 를 넣어 주세요" };
 
   checks.kiprisKey = process.env.KIPRIS_SERVICE_KEY
-    ? { ok: true, detail: "설정됨 (P4에서 사용)" }
-    : { ok: false, detail: "아직 없음 — P4 특허 연결 전까지는 없어도 됩니다" };
+    ? { ok: true, detail: "설정됨 — 5단계 특허 조회 가능" }
+    : { ok: false, detail: "없음 — 5단계 선행기술조사에서 특허를 찾을 수 없습니다" };
 
   // 페르소나 3종이 모두 읽히는지 + 이미지 지시문이 제대로 걷혔는지
   // (아키텍처 원칙 3: AI는 이미지 주소를 직접 쓰지 않는다)
@@ -70,20 +70,27 @@ export async function GET() {
   }
 
   checks.supabaseWriteKey = process.env.SUPABASE_SECRET_KEY
-    ? { ok: true, detail: "설정됨 (발명노트 저장용, 서버 전용)" }
-    : { ok: false, detail: "아직 없음 — P3 발명노트 저장 전까지는 없어도 됩니다" };
+    ? { ok: true, detail: "설정됨 — 발명노트가 저장됩니다 (서버 전용 키)" }
+    : { ok: false, detail: "없음 — 노트가 브라우저에만 남고 저장되지 않습니다" };
 
-  const required = ["anthropicKey", "personas"];
-  const ready = required.every((key) => checks[key].ok);
+  // 이것만 있으면 대화는 시작된다
+  const canChat = checks.anthropicKey.ok && checks.personas.ok;
+  const allReady = Object.values(checks).every((check) => check.ok);
+
+  const missing = Object.entries(checks)
+    .filter(([, check]) => !check.ok)
+    .map(([name]) => name);
 
   return NextResponse.json(
     {
-      ready,
-      summary: ready
-        ? "P0 실행 준비 완료 — 첫 화면에서 지도교사가 인사를 건넵니다."
-        : "아직 준비되지 않은 항목이 있습니다. 아래 checks 를 확인해 주세요.",
+      ready: canChat,
+      summary: !canChat
+        ? "아직 대화를 시작할 수 없습니다. 아래 checks 를 확인해 주세요."
+        : allReady
+          ? "모두 준비됐습니다 — 0단계부터 5단계까지 완주할 수 있습니다."
+          : `대화는 가능하지만 일부 기능이 빠집니다: ${missing.join(", ")}`,
       checks,
     },
-    { status: ready ? 200 : 503 },
+    { status: canChat ? 200 : 503 },
   );
 }
