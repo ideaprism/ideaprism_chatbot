@@ -1,18 +1,18 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 
 import {
   CHAT_EFFORT,
-  CHAT_MODEL,
   MAX_AI_CALLS_PER_SESSION,
   MAX_OUTPUT_TOKENS,
   MAX_TOOL_ROUNDS,
 } from "@/lib/ai/config";
+import { resolveProvider } from "@/lib/ai/provider";
+import { AiError, type AiMessage, type AiToolResult } from "@/lib/ai/types";
 import { normalizeEmotion } from "@/lib/characters";
 import { saveNote } from "@/lib/notes/repository";
 import { loadPersona } from "@/lib/personas";
 import {
-  buildSystemBlocks,
+  buildSystemPrompt,
   compactHistory,
   createEmotionParser,
   handoffTurn,
@@ -33,7 +33,7 @@ import type { ChatEvent, ChatRequest, SessionState } from "@/types/chat";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/** 최근 몇 턴을 그대로 보낼지 (PRD F-7 대화 압축의 1차 방어선) */
+/** 최근 몇 턴을 그대로 보낼지 (PRD F-7 대화 압축) */
 const MAX_HISTORY_TURNS = 24;
 
 function sse(event: ChatEvent): string {
@@ -45,13 +45,6 @@ function fail(message: string, status = 400) {
 }
 
 export async function POST(request: Request) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return fail(
-      "ANTHROPIC_API_KEY가 설정되지 않았습니다. .env.local 파일에 키를 넣고 개발 서버를 다시 시작해 주세요.",
-      500,
-    );
-  }
-
   let body: ChatRequest;
   try {
     body = (await request.json()) as ChatRequest;
@@ -63,7 +56,23 @@ export async function POST(request: Request) {
 
   let session: SessionState = body.session;
 
-  // 비용 가드 (PRD 8장). Anthropic 콘솔의 월 한도와 이중으로 건다.
+  // 이번 대화에 쓸 모델 회사를 정한다. 세션이 정한 곳을 그대로 쓰되,
+  // 키가 없으면 키가 있는 곳으로 넘어간다. (PRD 7장: 대화 도중 교체 금지)
+  const resolved = resolveProvider(session.provider);
+  if (!resolved) {
+    return fail(
+      "AI 키가 하나도 설정되지 않았습니다. .env.local 에 ANTHROPIC_API_KEY, " +
+        "OPENAI_API_KEY, GEMINI_API_KEY 중 하나 이상을 넣고 개발 서버를 다시 시작해 주세요.",
+      500,
+    );
+  }
+
+  const { adapter } = resolved;
+  if (session.provider !== adapter.id) {
+    session = { ...session, provider: adapter.id };
+  }
+
+  // 비용 가드 (PRD 8장). Anthropic 콘솔 등의 월 한도와 이중으로 건다.
   if (session.aiCalls >= MAX_AI_CALLS_PER_SESSION) {
     return fail(
       `이번 대화에서 쓸 수 있는 횟수(${MAX_AI_CALLS_PER_SESSION}번)를 다 썼어요. ` +
@@ -83,8 +92,6 @@ export async function POST(request: Request) {
     return fail(`페르소나 파일을 읽지 못했습니다 (${characterId}).`, 500);
   }
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
   const ctx: TurnContext = {
     quest: session.quest,
     nickname: session.nickname,
@@ -98,13 +105,15 @@ export async function POST(request: Request) {
   // 들어갔다면 안내를 했다는 뜻이므로, 이탈 횟수는 0에서 다시 센다. (PRD F-8)
   const redirected = session.offTopicCount >= OFF_TOPIC_LIMIT;
 
-  // 첫 인사는 학생 발화 없이 캐릭터가 먼저 말을 걸기 때문에, 이력이 assistant로
-  // 시작할 수 있다. Messages API는 첫 메시지가 user여야 하므로 시동 문구를 복원한다.
   const history = normalizeHistory(
     compactHistory(
       (body.history ?? [])
         .filter((turn) => turn.text.trim().length > 0)
-        .map((turn) => ({ role: turn.role, content: turn.text })),
+        .map<AiMessage>((turn) =>
+          turn.role === "user"
+            ? { role: "user", content: turn.text }
+            : { role: "assistant", content: turn.text },
+        ),
       MAX_HISTORY_TURNS,
     ),
   );
@@ -114,14 +123,14 @@ export async function POST(request: Request) {
       ? handoffTurn(ctx, body.handoffFrom ?? null)
       : openingTurn(ctx);
 
-  const messages: Anthropic.MessageParam[] = [
+  const messages: AiMessage[] = [
     ...history,
     body.message && body.message.trim()
       ? userTurnWithBriefing(body.message.trim(), ctx)
       : opener,
   ];
 
-  const system = buildSystemBlocks(characterId, persona);
+  const system = buildSystemPrompt(characterId, persona);
   const tools = toolsForStage(session.quest.currentStage);
 
   const encoder = new TextEncoder();
@@ -132,13 +141,13 @@ export async function POST(request: Request) {
       let emotionSent = false;
       /** 학생 화면에 실제로 글자가 나갔는가 */
       let textSent = false;
+      /** 이번 턴에 AI가 표시한 주제 이탈 횟수 (PRD F-8) */
+      let offTopicSeen = 0;
 
       const send = (event: ChatEvent) => {
         if (event.type === "text" && event.delta) textSent = true;
         controller.enqueue(encoder.encode(sse(event)));
       };
-      /** 이번 턴에 AI가 표시한 주제 이탈 횟수 (PRD F-8) */
-      let offTopicSeen = 0;
 
       const consume = (parsed: { emotions: string[]; offTopic: number }) => {
         offTopicSeen += parsed.offTopic;
@@ -156,7 +165,6 @@ export async function POST(request: Request) {
       const usage = { input: 0, output: 0, cacheRead: 0 };
       /** 이번 턴에 노트나 단계가 바뀌었는가 — 바뀐 턴에만 저장한다 */
       let noteDirty = false;
-
       /** 도구를 계속 부르다 상한에 걸려 끝났는가 (= 마무리 말이 없는 상태) */
       let ranOutOfRounds = false;
 
@@ -169,44 +177,40 @@ export async function POST(request: Request) {
           }
           session = { ...session, aiCalls: session.aiCalls + 1 };
 
-          const turn = client.messages.stream({
-            model: CHAT_MODEL,
-            max_tokens: MAX_OUTPUT_TOKENS,
-            system,
-            messages,
-            ...(tools.length > 0 ? { tools } : {}),
-            thinking: { type: "adaptive" },
-            output_config: { effort: CHAT_EFFORT },
-          });
-
-          for await (const event of turn) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              const parsed = emotionParser.push(event.delta.text);
+          const result = await adapter.streamTurn(
+            {
+              system,
+              messages,
+              tools,
+              maxTokens: MAX_OUTPUT_TOKENS,
+              effort: CHAT_EFFORT,
+            },
+            (event) => {
+              if (event.type !== "text") return;
+              const parsed = emotionParser.push(event.delta);
               consume(parsed);
               if (parsed.text) send({ type: "text", delta: parsed.text });
-            }
-          }
-
-          const final = await turn.finalMessage();
-          usage.input += final.usage.input_tokens ?? 0;
-          usage.output += final.usage.output_tokens ?? 0;
-          usage.cacheRead += final.usage.cache_read_input_tokens ?? 0;
-
-          // 생각 블록까지 그대로 되돌려 줘야 다음 라운드가 이어진다
-          messages.push({ role: "assistant", content: final.content });
-
-          if (final.stop_reason !== "tool_use") break;
-
-          const toolUses = final.content.filter(
-            (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
+            },
           );
 
-          const results: Anthropic.ToolResultBlockParam[] = [];
+          usage.input += result.usage.input;
+          usage.output += result.usage.output;
+          usage.cacheRead += result.usage.cacheRead;
 
-          for (const call of toolUses) {
+          // raw 에는 어댑터가 다음 턴에 되쓸 원본이 들어 있다
+          // (Claude의 생각 블록처럼 그대로 돌려줘야 하는 것들)
+          messages.push({
+            role: "assistant",
+            content: result.text,
+            toolCalls: result.toolCalls,
+            raw: result.raw,
+          });
+
+          if (result.stopReason !== "tool_use") break;
+
+          const results: AiToolResult[] = [];
+
+          for (const call of result.toolCalls) {
             if (call.name === "update_note" || call.name === "complete_stage") {
               noteDirty = true;
             }
@@ -227,15 +231,14 @@ export async function POST(request: Request) {
             }
 
             results.push({
-              type: "tool_result",
-              tool_use_id: call.id,
+              id: call.id,
+              name: call.name,
               content: outcome.result,
-              ...(outcome.isError ? { is_error: true } : {}),
+              isError: outcome.isError,
             });
           }
 
-          // 병렬 호출도 결과는 반드시 한 개의 사용자 메시지에 모아 돌려준다
-          messages.push({ role: "user", content: results });
+          messages.push({ role: "tool", results });
 
           if (round === MAX_TOOL_ROUNDS - 1) ranOutOfRounds = true;
         }
@@ -276,13 +279,14 @@ export async function POST(request: Request) {
         }
 
         send({ type: "state", session });
-        send({ type: "done", usage });
+        send({ type: "done", usage, provider: adapter.id, model: adapter.model });
       } catch (error) {
-        console.error("[chat] 스트리밍 실패", error);
+        console.error(`[chat] ${adapter.id} 응답 실패`, error);
         const message =
-          error instanceof Anthropic.APIError
-            ? `AI 응답에 실패했습니다 (${error.status}). ${error.message}`
-            : "AI 응답에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+          error instanceof AiError
+            ? error.message
+            : `${adapter.label} 응답에 실패했습니다. 잠시 후 다시 시도해 주세요. ` +
+              (error instanceof Error ? `(${error.message})` : "");
         send({ type: "error", message });
       } finally {
         controller.close();

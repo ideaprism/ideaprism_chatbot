@@ -6,11 +6,11 @@
  * 그래서 system에는 "캐릭터 대본 + 고정 운영 규칙"만 넣고,
  * 단계·별명·막힘 신호 같은 가변 정보는 마지막 사용자 턴 뒤에 붙인다.
  *
- * (Sonnet 5는 대화 중간 system 메시지를 지원하지 않아, 가변 지시는
- *  사용자 턴에 <운영지침> 블록으로 붙이는 방식을 쓴다.)
+ * 대화 중간에 시스템 메시지를 끼우는 기능은 회사·모델마다 지원 여부가 달라 쓰지 않는다.
+ * 가변 지시는 사용자 턴에 <운영지침> 블록으로 붙이는 방식으로 통일했다 — 셋 다 동작한다.
  */
 
-import type Anthropic from "@anthropic-ai/sdk";
+import type { AiMessage } from "./ai/types";
 import { emotionNames, getCharacter, type CharacterId } from "./characters";
 import { STAGES, type QuestState } from "./quest";
 import type { PatentSnapshot } from "@/types/kipris";
@@ -57,21 +57,15 @@ function operatingRules(characterId: CharacterId): string {
 }
 
 /**
- * system 블록 조립. 마지막 블록에 캐시 기준점을 찍어
- * 도구 목록 + 운영 규칙 + 페르소나 대본을 통째로 캐싱한다.
+ * 시스템 프롬프트를 조각 순서대로 만든다.
+ * 앞쪽일수록 고정된 내용이며, 캐싱 기준점은 어댑터가 마지막 조각에 찍는다
+ * (Claude는 직접 지정, OpenAI·Gemini는 자동 캐싱이라 순서만 지켜 주면 된다).
  */
-export function buildSystemBlocks(
+export function buildSystemPrompt(
   characterId: CharacterId,
   personaText: string,
-): Anthropic.TextBlockParam[] {
-  return [
-    { type: "text", text: operatingRules(characterId) },
-    {
-      type: "text",
-      text: `# 캐릭터 대본\n\n${personaText}`,
-      cache_control: { type: "ephemeral" },
-    },
-  ];
+): string[] {
+  return [operatingRules(characterId), `# 캐릭터 대본\n\n${personaText}`];
 }
 
 export interface TurnContext {
@@ -176,7 +170,7 @@ export function buildTurnBriefing(ctx: TurnContext): string {
 export function userTurnWithBriefing(
   userText: string,
   ctx: TurnContext,
-): Anthropic.MessageParam {
+): AiMessage {
   return {
     role: "user",
     content: `${userText}\n\n${buildTurnBriefing(ctx)}`,
@@ -207,9 +201,9 @@ export const COMPACTED_MARKER =
  * 여기서 따로 AI를 불러 요약하지 않는다(비용도, 지연도 늘리지 않는다).
  */
 export function compactHistory(
-  history: Anthropic.MessageParam[],
+  history: AiMessage[],
   keepTurns: number,
-): Anthropic.MessageParam[] {
+): AiMessage[] {
   if (history.length <= keepTurns) return history;
 
   const kept = history.slice(-keepTurns);
@@ -218,7 +212,7 @@ export function compactHistory(
 }
 
 /** 세션 첫 화면: 학생 입력 없이 캐릭터가 먼저 말을 걸도록 하는 시동 메시지 */
-export function openingTurn(ctx: TurnContext): Anthropic.MessageParam {
+export function openingTurn(ctx: TurnContext): AiMessage {
   return {
     role: "user",
     content: `${SESSION_OPENING_CUE}\n\n${buildTurnBriefing(ctx)}`,
@@ -232,7 +226,7 @@ export function openingTurn(ctx: TurnContext): Anthropic.MessageParam {
 export function handoffTurn(
   ctx: TurnContext,
   from: CharacterId | null,
-): Anthropic.MessageParam {
+): AiMessage {
   const who = from ? getCharacter(from).name : "앞 캐릭터";
   return {
     role: "user",
@@ -245,12 +239,13 @@ export function handoffTurn(
 }
 
 /**
- * 대화 이력을 Messages API가 받아들이는 형태로 맞춘다.
- * 첫 인사 때문에 이력이 assistant로 시작할 수 있는데, 그대로 보내면 400이 난다.
+ * 대화 이력의 첫 메시지를 user로 맞춘다.
+ * 첫 인사는 학생 발화 없이 시작하므로 이력이 assistant로 시작할 수 있는데,
+ * 그대로 보내면 Claude는 400을 내고 다른 회사도 흐름이 어색해진다.
  */
 export function normalizeHistory(
-  history: Anthropic.MessageParam[],
-): Anthropic.MessageParam[] {
+  history: AiMessage[],
+): AiMessage[] {
   if (history[0]?.role !== "assistant") return history;
   return [{ role: "user", content: SESSION_OPENING_CUE }, ...history];
 }

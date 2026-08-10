@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { CHAT_MODEL } from "@/lib/ai/config";
+import { availableProviders } from "@/lib/ai/provider";
 import { CHARACTERS } from "@/lib/characters";
 import { loadPersona } from "@/lib/personas";
 import { supabaseRead } from "@/lib/supabase";
@@ -18,9 +18,30 @@ type Check = { ok: boolean; detail: string };
 export async function GET() {
   const checks: Record<string, Check> = {};
 
-  checks.anthropicKey = process.env.ANTHROPIC_API_KEY
-    ? { ok: true, detail: `설정됨 · 모델 ${CHAT_MODEL}` }
-    : { ok: false, detail: ".env.local 에 ANTHROPIC_API_KEY 를 넣어 주세요" };
+  // 세 회사 중 하나라도 키가 있으면 대화는 가능하다
+  const providers = availableProviders();
+  const ready = providers.filter((provider) => provider.configured);
+
+  checks.aiProviders =
+    ready.length > 0
+      ? {
+          ok: true,
+          detail: `쓸 수 있는 모델 ${ready.length}종 — ${ready
+            .map((provider) => `${provider.label}(${provider.model})`)
+            .join(", ")}`,
+        }
+      : {
+          ok: false,
+          detail:
+            ".env.local 에 ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY 중 " +
+            "하나 이상을 넣어 주세요",
+        };
+
+  for (const provider of providers) {
+    checks[`ai_${provider.id}`] = provider.configured
+      ? { ok: true, detail: `키 있음 · 모델 ${provider.model}` }
+      : { ok: false, detail: `키 없음 — ${provider.label} 비교는 할 수 없습니다` };
+  }
 
   checks.kiprisKey = process.env.KIPRIS_SERVICE_KEY
     ? { ok: true, detail: "설정됨 — 5단계 특허 조회 가능" }
@@ -74,7 +95,7 @@ export async function GET() {
     : { ok: false, detail: "없음 — 노트가 브라우저에만 남고 저장되지 않습니다" };
 
   // 이것만 있으면 대화는 시작된다
-  const canChat = checks.anthropicKey.ok && checks.personas.ok;
+  const canChat = checks.aiProviders.ok && checks.personas.ok;
   const allReady = Object.values(checks).every((check) => check.ok);
 
   const missing = Object.entries(checks)

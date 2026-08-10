@@ -1,9 +1,11 @@
+import type { ProviderId } from "./ai/types";
 import { initialQuestState, STAGES, type StageId } from "./quest";
 import type { NoteEntry, SessionState } from "@/types/chat";
 
 /** 새 세션 (익명 — 별명만 받는다) */
-export function createSession(): SessionState {
+export function createSession(provider: ProviderId | null = null): SessionState {
   return {
+    provider,
     sessionId:
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()

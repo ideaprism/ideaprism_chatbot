@@ -1,3 +1,4 @@
+import type { ProviderId } from "@/lib/ai/types";
 import type { CharacterId } from "@/lib/characters";
 import type { QuestState, StageId } from "@/lib/quest";
 import type { ToolName } from "@/lib/tools";
@@ -23,6 +24,11 @@ export interface NoteEntry {
 /** 브라우저가 들고 다니는 세션 상태. 서버는 이걸 받아 검증하고 갱신해 돌려준다. */
 export interface SessionState {
   sessionId: string;
+  /**
+   * 이번 대화에 쓰는 모델 회사. 대화가 시작되면 바꾸지 않는다 (PRD 7장).
+   * null 이면 서버가 키가 있는 곳으로 정해 준다.
+   */
+  provider: ProviderId | null;
   nickname: string | null;
   quest: QuestState;
   notes: NoteEntry[];
@@ -87,5 +93,11 @@ export type ChatEvent =
     }
   /** 특허 조회 결과 */
   | { type: "patents"; query: string; patents: Patent[]; totalCount: number }
-  | { type: "done"; usage?: { input: number; output: number; cacheRead: number } }
+  | {
+      type: "done";
+      usage?: { input: number; output: number; cacheRead: number };
+      /** 이번 턴을 실제로 처리한 회사·모델 — 비교 실험 때 화면에 보여 준다 */
+      provider?: ProviderId;
+      model?: string;
+    }
   | { type: "error"; message: string };

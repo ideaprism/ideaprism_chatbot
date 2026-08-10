@@ -19,14 +19,20 @@ cp .env.local.example .env.local
 
 `.env.local` 을 열어 값을 채웁니다.
 
+**AI 키는 셋 중 하나 이상만 있으면 대화가 됩니다.** 셋 다 넣으면 화면 상단에서 골라 가며 비교할 수 있습니다.
+
 | 변수 | 어디서 구하나 | 없으면 |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | [Anthropic 콘솔](https://console.anthropic.com/) → API Keys | **대화 자체가 안 됨** |
-| `NEXT_PUBLIC_SUPABASE_URL` | 1.0 Vercel 대시보드에서 복사 | 선배 발명 검색 불가 |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 1.0 Vercel 대시보드에서 복사 | 선배 발명 검색 불가 |
-| `SUPABASE_SECRET_KEY` | 1.0 Vercel 대시보드에서 복사 | 노트가 브라우저에만 남고 저장 안 됨 |
-| `KIPRIS_SERVICE_KEY` | 1.0 Vercel 대시보드에서 복사 | 5단계 특허 조회 불가 |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/) (`sk-ant-`로 시작) | Claude로 비교 불가 |
+| `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | OpenAI로 비교 불가 |
+| `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (무료 티어 있음) | Gemini로 비교 불가 |
+| `NEXT_PUBLIC_SUPABASE_URL` | 1.0 Vercel 대시보드 | 선배 발명 검색 불가 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 1.0 Vercel 대시보드 | 선배 발명 검색 불가 |
+| `SUPABASE_SECRET_KEY` | 1.0 Vercel 대시보드 | 노트가 브라우저에만 남고 저장 안 됨 |
+| `KIPRIS_SERVICE_KEY` | 1.0 Vercel 대시보드 | 5단계 특허 조회 불가 |
 
+> Vercel에서 가려진 값은 **Settings → Environment Variables → 항목 우측 `⋯` → Edit** 을 눌러야 보입니다.
+>
 > 값을 넣은 뒤에는 개발 서버를 **한 번 껐다 켜야** 반영됩니다.
 
 ### 2. 발명노트 테이블 만들기
@@ -74,10 +80,36 @@ http://localhost:3000/api/health 를 열면 무엇이 준비됐고 무엇이 비
 | P3 발명노트 | Supabase 저장, 노트 패널, 완성본 인쇄 | ✅ |
 | P4 특허 연결 | KIPRIS 검색식 생성 + 조회, 편집 가능한 특허 패널 | ✅ |
 | P5 다듬기 | 주제 이탈 환기, 대화 압축, 비용 가드, 단계별 사용량 계측 | ✅ |
+| 추가 | 모델 3사 비교 구조 (Claude·OpenAI·Gemini) | ✅ |
 
-**아직 실제 API로 검증하지 못한 것:** 키가 들어가야 확인 가능합니다.
-Claude 응답 스트리밍, Supabase 검색, KIPRIS 조회는 문서대로 구현했지만
-실제 호출은 한 번도 돌려보지 못했습니다.
+### 모델 3사 비교 (PRD 7장)
+
+화면 상단에서 회사를 골라 같은 시나리오를 돌려 볼 수 있습니다.
+**대화 도중에는 못 바꿉니다** — 프롬프트 캐시가 회사·모델별이라 중간에 갈아타면
+이력 전체를 정가로 다시 처리하고 캐릭터 말투도 흔들리기 때문입니다.
+바꾸면 새 대화로 다시 시작합니다.
+
+회사마다 다른 부분은 어댑터(`src/lib/ai/adapters/`)가 흡수하고,
+퀘스트·도구 8종·발명노트·검색·특허 로직은 **한 벌만 씁니다.**
+
+| | Claude | OpenAI | Gemini |
+|---|---|---|---|
+| 사용 API | Messages | **Responses** | generateContent |
+| 캐싱 | 어디를 캐싱할지 직접 지정 | 자동 (제어 불가) | 자동 (암시적) |
+| 사고 조절 | adaptive + effort | reasoning effort | thinkingBudget |
+
+> OpenAI는 Chat Completions에서 "도구 + 추론"을 함께 못 써서(`gpt-5.4-mini` 기준
+> 400 오류) Responses API를 씁니다. 학생 대화가 OpenAI 서버에 남지 않도록 `store: false`.
+>
+> 캐싱 방식이 셋 다 달라 **비용 비교는 참고치**로 보셔야 합니다. 품질 비교는 유효합니다.
+
+### 검증 상태
+
+- ✅ **OpenAI로 끝까지 확인** — 첫 인사 스트리밍, 감정 태그, `complete_stage` 도구 호출,
+  코드 검증을 통한 0→1단계 승급, 배턴터치, 단계별 사용량·캐시 기록까지 실제 호출로 확인
+- ⚠️ **Claude·Gemini는 미검증** — 키가 없어 한 번도 호출하지 못했습니다
+- ⚠️ **Supabase 검색·KIPRIS 조회 미검증** — 실제 키가 필요합니다
+  (1.0 폴더의 `.env.local` 값은 자리표시자라 쓸 수 없습니다)
 
 ---
 

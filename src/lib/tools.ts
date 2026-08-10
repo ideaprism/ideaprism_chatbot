@@ -11,7 +11,7 @@
  * 아직 구현되지 않은 도구는 AI에게 아예 건네지 않는다(없는 버튼을 누르지 않도록).
  */
 
-import type Anthropic from "@anthropic-ai/sdk";
+import type { AiTool } from "./ai/types";
 import { STAGE_IDS, type StageId } from "./quest";
 
 export type ToolName =
@@ -36,7 +36,7 @@ export const IMPLEMENTED_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
   "complete_stage",
 ]);
 
-export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
+export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
   search_inventions: {
     name: "search_inventions",
     description:
@@ -44,7 +44,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
       "최대 500건이 브라우저 메모리에 적재된다. 학생이 어떤 주제를 꺼냈을 때, 또는 " +
       "'비슷한 발명 있어?'라고 물었을 때 사용한다. 돌려받는 건수와 통계만 근거로 말하고, " +
       "숫자를 임의로 지어내지 않는다.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         keyword: {
@@ -65,7 +65,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
       "값은 반드시 search_inventions가 돌려준 '고를 수 있는 값' 목록에서만 쓴다. " +
       "목록에 없는 값은 무시되고, 어떤 값이 무시됐는지 알려 준다. " +
       "빈 배열을 주면 그 필터가 해제된다. 생략한 항목은 지금 상태를 유지한다.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         grades: {
@@ -94,7 +94,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
     description:
       "현재 화면에 보이는 결과셋의 통계(학년·문제유형·SCAMPER 분포)를 가져온다. " +
       "숫자는 프로그램이 세므로, 너는 받은 숫자를 해석해 학생에게 설명만 한다.",
-    input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
 
   show_invention: {
@@ -102,7 +102,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
     description:
       "특정 발명 하나를 상세 카드로 크게 띄운다. '이거 자세히 볼래' 같은 요청이나, " +
       "네가 특정 사례를 예로 들 때 사용한다.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         inventionId: {
@@ -122,7 +122,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
       "너는 낱말만 갈래별로 고르고, 검색식 문법(+, *, 괄호)은 프로그램이 조립한다. " +
       "같은 갈래 안에는 비슷한 말(동의어)을 함께 넣는다. 예: object=['우산','양산']. " +
       "갈래가 많을수록 결과가 줄어드니, 처음에는 대상과 문제 정도로 시작하는 게 좋다.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         object: {
@@ -162,7 +162,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
       "검색식으로 실제 특허를 조회하고 결과를 우측 특허 패널에 띄운다. " +
       "조회 결과에 나온 특허만 근거로 삼는다. 결과에 없는 특허를 지어내면 안 된다. " +
       "학생이 패널에서 검색식을 직접 고쳐 다시 조회했을 수도 있으니, 현재 검색식을 확인하고 쓴다.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         query: {
@@ -181,7 +181,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
       "발명노트에 지금까지의 진행을 기록한다. 단계가 끝날 때뿐 아니라, 학생이 중요한 " +
       "이야기를 했을 때(문제 정의문, 아이디어 후보 등) 그때그때 적어 둔다. " +
       "학생의 말을 각색하지 말고 요지를 그대로 옮긴다.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         stage: {
@@ -211,7 +211,7 @@ export const TOOL_SCHEMAS: Record<ToolName, Anthropic.Tool> = {
       "통과해야만 다음 단계로 넘어간다. 검증에 실패하면 부족한 항목을 알려 주므로 " +
       "대화를 더 이어간 뒤 다시 호출하면 된다. 스스로 '다음 단계로 가자'고 선언하지 말고 " +
       "반드시 이 도구를 통해서만 단계를 올린다.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         stage: {
@@ -253,7 +253,7 @@ const STAGE_TOOLS: Record<StageId, ToolName[]> = {
  * 도구는 프롬프트 맨 앞에 렌더링되므로, 단계가 바뀔 때만 목록이 바뀌도록 설계했다
  * (= 캐시가 깨지는 지점이 배턴터치와 일치한다).
  */
-export function toolsForStage(stage: StageId): Anthropic.Tool[] {
+export function toolsForStage(stage: StageId): AiTool[] {
   return STAGE_TOOLS[stage]
     .filter((name) => IMPLEMENTED_TOOLS.has(name))
     .map((name) => TOOL_SCHEMAS[name]);

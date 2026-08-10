@@ -233,10 +233,13 @@ test("대화가 길어지면 오래된 턴을 잘라내고 표시를 남긴다",
 
   const compacted = compactHistory(history, 10);
 
+  const textOf = (message: (typeof compacted)[number]) =>
+    message.role === "tool" ? "" : message.content;
+
   assert.equal(compacted.length, 11, "표시 1줄 + 최근 10턴");
-  assert.equal(compacted[0].content, COMPACTED_MARKER);
-  assert.equal(compacted[1].content, "20번째 말", "최근 10턴만 남는다");
-  assert.equal(compacted.at(-1)?.content, "29번째 말");
+  assert.equal(textOf(compacted[0]), COMPACTED_MARKER);
+  assert.equal(textOf(compacted[1]), "20번째 말", "최근 10턴만 남는다");
+  assert.equal(textOf(compacted.at(-1)!), "29번째 말");
 });
 
 // ── 4. 단계별 사용량 ─────────────────────────────────────────

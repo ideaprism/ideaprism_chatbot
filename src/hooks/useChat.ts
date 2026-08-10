@@ -7,8 +7,17 @@ import { STAGES } from "@/lib/quest";
 import { createSession } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
 import type { ChatEvent, ChatMessage, SessionState } from "@/types/chat";
+import type { ProviderId } from "@/lib/ai/types";
 import type { Patent } from "@/types/kipris";
 import type { InventionRow, LookupItem } from "@/types/search";
+
+/** 고를 수 있는 모델 (키가 있는지 여부까지) */
+export interface ProviderOption {
+  id: ProviderId;
+  label: string;
+  model: string;
+  configured: boolean;
+}
 
 /** 검색 결과 원본 — 브라우저 메모리에만 둔다(최대 500건, 저장소에 넣기엔 크다) */
 export interface SearchResults {
@@ -58,6 +67,9 @@ export function useChat() {
   const [results, setResults] = useState<SearchResults | null>(null);
   const [patents, setPatents] = useState<Patent[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKind | null>(null);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  /** 이번 턴을 실제로 처리한 모델 — 비교 실험 때 화면에 보여 준다 */
+  const [lastModel, setLastModel] = useState<string | null>(null);
 
   /** 스트리밍 도중에도 최신 값을 읽어야 해서 ref로 함께 들고 간다 */
   const sessionRef = useRef<SessionState | null>(null);
@@ -202,6 +214,7 @@ export function useChat() {
                 setError(event.message);
                 break;
               case "done":
+                if (event.model) setLastModel(event.model);
                 break;
             }
           }
@@ -262,6 +275,22 @@ export function useChat() {
     bootstrap();
   }, [bootstrap]);
 
+  // 고를 수 있는 모델 목록 (키가 들어 있는 곳만 고를 수 있게 표시)
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/providers")
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled) setProviders(data.providers ?? []);
+      })
+      .catch(() => {
+        /* 목록을 못 받아도 대화 자체에는 지장이 없다 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const send = useCallback(
     (text: string) => {
       const current = sessionRef.current;
@@ -271,23 +300,41 @@ export function useChat() {
     [run, streaming],
   );
 
-  const restart = useCallback(() => {
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* 무시 */
-    }
-    const fresh = createSession();
-    sessionRef.current = fresh;
-    setSession(fresh);
-    syncMessages([]);
-    setHandoff(null);
-    setError(null);
-    setResults(null);
-    setPatents([]);
-    setActivePanel(null);
-    void run(null, fresh);
-  }, [run, syncMessages]);
+  const restart = useCallback(
+    (provider?: ProviderId | null) => {
+      try {
+        sessionStorage.removeItem(STORAGE_KEY);
+      } catch {
+        /* 무시 */
+      }
+      const fresh = createSession(provider ?? sessionRef.current?.provider ?? null);
+      sessionRef.current = fresh;
+      setSession(fresh);
+      syncMessages([]);
+      setHandoff(null);
+      setError(null);
+      setResults(null);
+      setPatents([]);
+      setActivePanel(null);
+      setLastModel(null);
+      void run(null, fresh);
+    },
+    [run, syncMessages],
+  );
+
+  /**
+   * 모델 회사 바꾸기.
+   * 대화 도중에는 바꿀 수 없으므로(PRD 7장) 새 대화로 다시 시작한다.
+   * 캐시가 회사·모델별이라 중간에 바꾸면 이력 전체를 정가로 재처리하게 되고,
+   * 캐릭터 말투도 흔들리기 때문이다.
+   */
+  const switchProvider = useCallback(
+    (provider: ProviderId) => {
+      if (sessionRef.current?.provider === provider) return;
+      restart(provider);
+    },
+    [restart],
+  );
 
   /**
    * 특허 패널에서 검색식을 고쳐 다시 조회했을 때.
@@ -366,6 +413,9 @@ export function useChat() {
     patents,
     activePanel,
     setActivePanel,
+    providers,
+    lastModel,
+    switchProvider,
     send,
     restart,
     dismissHandoff,

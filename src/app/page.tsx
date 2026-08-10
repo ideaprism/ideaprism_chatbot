@@ -8,6 +8,7 @@ import { MessageList } from "@/components/MessageList";
 import { NotePanel } from "@/components/note/NotePanel";
 import { PatentPanel } from "@/components/patent/PatentPanel";
 import { ProgressRail } from "@/components/ProgressRail";
+import { ProviderPicker } from "@/components/ProviderPicker";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
 import { useChat } from "@/hooks/useChat";
@@ -23,6 +24,9 @@ export default function Home() {
     patents,
     activePanel,
     setActivePanel,
+    providers,
+    lastModel,
+    switchProvider,
     send,
     restart,
     dismissHandoff,
@@ -71,6 +75,15 @@ export default function Home() {
         activePanel={activePanel}
         onSelectPanel={setActivePanel}
         available={{ search: canSearch, note: hasNote, patent: Boolean(session.patent) }}
+        providerPicker={
+          <ProviderPicker
+            providers={providers}
+            current={session.provider}
+            lastModel={lastModel}
+            conversationStarted={messages.length > 1}
+            onSelect={switchProvider}
+          />
+        }
       />
 
       <WorkspaceShell
@@ -85,7 +98,7 @@ export default function Home() {
                   <p>{error}</p>
                   <button
                     type="button"
-                    onClick={restart}
+                    onClick={() => restart()}
                     className="mt-1 inline-flex items-center gap-1 text-xs font-medium underline underline-offset-2"
                   >
                     <RotateCcw className="size-3" /> 처음부터 다시 시작

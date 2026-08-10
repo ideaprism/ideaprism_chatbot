@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, NotebookPen, ScrollText, Search } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { getCharacter } from "@/lib/characters";
 import { progressView, STAGES, type QuestState } from "@/lib/quest";
@@ -23,11 +24,14 @@ export function ProgressRail({
   activePanel,
   onSelectPanel,
   available,
+  providerPicker,
 }: {
   quest: QuestState;
   activePanel: PanelKind | null;
   onSelectPanel: (kind: PanelKind | null) => void;
   available: Record<PanelKind, boolean>;
+  /** 모델 비교용 선택기 (PRD 7장) */
+  providerPicker?: ReactNode;
 }) {
   const steps = progressView(quest);
   const character = getCharacter(STAGES[quest.currentStage].character);
@@ -78,6 +82,8 @@ export function ProgressRail({
         <p className="text-xs text-neutral-500">
           지금 함께하는 사람 · <span className="font-medium">{character.name}</span>
         </p>
+
+        {providerPicker}
 
         <nav className="flex items-center gap-1">
           {PANEL_TABS.map(({ kind, label, icon: Icon }) => {
