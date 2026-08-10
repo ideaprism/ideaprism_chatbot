@@ -28,7 +28,7 @@ import { getSearch, putSearch } from "./search/store";
 import { upsertNote } from "./session";
 import { isToolName, type ToolName } from "./tools";
 import type { ChatEvent, NoteEntry, SessionState } from "@/types/chat";
-import type { Patent, PatentSnapshot } from "@/types/kipris";
+import type { Patent, PatentSnapshot, QueryParts } from "@/types/kipris";
 import type {
   InventionRow,
   LookupItem,
@@ -380,13 +380,14 @@ export async function executeTool(
 
     // ── 특허 ────────────────────────────────────────────────
     case "generate_kipris_query": {
-      const built = buildKiprisQuery({
+      const parts: QueryParts = {
         object: asStringArray(args.object) ?? [],
         problem: asStringArray(args.problem),
         solution: asStringArray(args.solution),
         method: asStringArray(args.method),
         effect: asStringArray(args.effect),
-      });
+      };
+      const built = buildKiprisQuery(parts);
 
       if (!built.query) {
         return keep(
@@ -396,8 +397,14 @@ export async function executeTool(
         );
       }
 
-      // 검색식만 만든 단계 — 아직 조회 전이라 건수는 알 수 없다
-      const nextSnapshot: PatentSnapshot = { query: built.query, totalCount: -1, loadedCount: 0 };
+      // 검색식만 만든 단계 — 아직 조회 전이라 건수는 알 수 없다.
+      // 낱말(parts)도 함께 실어야 학생이 패널에서 갈래별로 고쳐 볼 수 있다.
+      const nextSnapshot: PatentSnapshot = {
+        query: built.query,
+        totalCount: -1,
+        loadedCount: 0,
+        parts,
+      };
       const next: SessionState = { ...session, patent: nextSnapshot };
 
       return {
@@ -439,6 +446,9 @@ export async function executeTool(
         query,
         totalCount: found.totalCount,
         loadedCount: found.patents.length,
+        // 검색식이 그대로면 갈래 낱말도 그대로 — 학생 화면의 5칸이 비지 않도록
+        parts: query === session.patent?.query ? session.patent.parts : undefined,
+        page: found.page,
       };
       const next: SessionState = { ...session, patent: nextSnapshot };
 

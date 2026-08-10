@@ -15,10 +15,15 @@ import type {
 /** 학년 id → 이름. 필터를 사람 말("초등부")로 다루기 위해 필요하다. */
 export type GradeNames = Record<number, string>;
 
-export function gradeNameMap(grades: LookupItem[]): GradeNames {
-  const map: GradeNames = {};
-  for (const grade of grades) map[grade.id] = grade.name;
+/** id → 이름 (학년·분야가 같은 모양이라 함께 쓴다) */
+export function nameMap(items: LookupItem[]): Record<number, string> {
+  const map: Record<number, string> = {};
+  for (const item of items) map[item.id] = item.name;
   return map;
+}
+
+export function gradeNameMap(grades: LookupItem[]): GradeNames {
+  return nameMap(grades);
 }
 
 /**

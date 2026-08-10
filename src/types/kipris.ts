@@ -33,9 +33,17 @@ export interface PatentSnapshot {
   query: string;
   totalCount: number;
   loadedCount: number;
+  /**
+   * 검색식을 만든 재료. 특허 패널의 OPSME 5칸을 이 값으로 채운다 —
+   * 검색식 문자열만 들고 있으면 학생이 "대상"과 "문제"를 따로 고칠 수가 없다.
+   */
+  parts?: QueryParts;
+  /** 지금 보고 있는 쪽 번호 (1부터) */
+  page?: number;
 }
 
 export interface KiprisResult {
   patents: Patent[];
   totalCount: number;
+  page: number;
 }

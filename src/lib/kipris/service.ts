@@ -69,9 +69,11 @@ function parseItems(xml: string, pageOffset: number): Patent[] {
   return patents;
 }
 
-export async function searchKipris(query: string): Promise<KiprisResult> {
+export async function searchKipris(query: string, page = 1): Promise<KiprisResult> {
   const word = query.trim();
   if (!word) throw new KiprisError("검색식이 비어 있습니다.");
+
+  const pageNo = Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1;
 
   const serviceKey = process.env.KIPRIS_SERVICE_KEY;
   if (!serviceKey) {
@@ -84,7 +86,7 @@ export async function searchKipris(query: string): Promise<KiprisResult> {
   url.searchParams.set("word", word);
   url.searchParams.set("year", "0"); // 0 = 전체 연도
   url.searchParams.set("numOfRows", String(KIPRIS_ROWS));
-  url.searchParams.set("pageNo", "1");
+  url.searchParams.set("pageNo", String(pageNo));
   url.searchParams.set("ServiceKey", serviceKey);
 
   let response: Response;
@@ -117,5 +119,9 @@ export async function searchKipris(query: string): Promise<KiprisResult> {
     10,
   );
 
-  return { patents: parseItems(xml, 0), totalCount };
+  return {
+    patents: parseItems(xml, (pageNo - 1) * KIPRIS_ROWS),
+    totalCount,
+    page: pageNo,
+  };
 }

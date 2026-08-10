@@ -41,6 +41,10 @@ function row(over: Partial<InventionRow> & { id: string }): InventionRow {
     problem_tag: null,
     scamper: null,
     sdg: null,
+    invention_motive: null,
+    next_step: null,
+    curriculum: null,
+    ipc: null,
     ...over,
   };
 }

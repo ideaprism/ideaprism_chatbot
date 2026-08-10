@@ -6,9 +6,10 @@ import { getCharacter, normalizeEmotion, type CharacterId } from "@/lib/characte
 import { STAGES } from "@/lib/quest";
 import { createSession } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
+import type { PatentSeed } from "@/components/patent/PatentPanel";
 import type { ChatEvent, ChatMessage, SessionState } from "@/types/chat";
 import type { ProviderId } from "@/lib/ai/types";
-import type { Patent } from "@/types/kipris";
+import type { Patent, QueryParts } from "@/types/kipris";
 import type { InventionRow, LookupItem } from "@/types/search";
 
 /** 고를 수 있는 모델 (키가 있는지 여부까지) */
@@ -70,6 +71,14 @@ export function useChat() {
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   /** 이번 턴을 실제로 처리한 모델 — 비교 실험 때 화면에 보여 준다 */
   const [lastModel, setLastModel] = useState<string | null>(null);
+  /**
+   * 특허 패널을 "새 재료로 다시 세워야 할 때"만 올라가는 번호.
+   * 이 번호가 패널의 key 라서, 학생이 스스로 검색식을 고쳐 조회하는 동안에는
+   * 화면이 초기화되지 않고, AI가 검색식을 새로 만들었을 때만 다시 세워진다.
+   */
+  const [patentEpoch, setPatentEpoch] = useState(0);
+  /** 선배 발명 상세에서 "특허 검색"으로 넘어왔을 때의 출발 재료 */
+  const [patentSeed, setPatentSeed] = useState<PatentSeed | null>(null);
 
   /** 스트리밍 도중에도 최신 값을 읽어야 해서 ref로 함께 들고 간다 */
   const sessionRef = useRef<SessionState | null>(null);
@@ -208,6 +217,12 @@ export function useChat() {
                 setActivePanel("patent");
                 break;
               case "state":
+                // AI가 검색식을 새로 만들었으면 특허 패널을 그 재료로 다시 세운다.
+                // (학생이 패널에서 직접 조회한 경우는 sessionRef가 이미 같은 검색식이라 그냥 지나간다)
+                if (event.session.patent?.query !== sessionRef.current?.patent?.query) {
+                  setPatentSeed(null);
+                  setPatentEpoch((count) => count + 1);
+                }
                 syncSession(event.session);
                 break;
               case "error":
@@ -317,6 +332,8 @@ export function useChat() {
       setPatents([]);
       setActivePanel(null);
       setLastModel(null);
+      setPatentSeed(null);
+      setPatentEpoch(0);
       void run(null, fresh);
     },
     [run, syncMessages],
@@ -342,17 +359,32 @@ export function useChat() {
    * 다음 턴에 특허 탐정도 같은 화면을 보게 된다.
    */
   const applyPatentResult = useCallback(
-    (query: string, list: Patent[], totalCount: number) => {
+    (query: string, list: Patent[], totalCount: number, page: number, parts: QueryParts) => {
       setPatents(list);
       const current = sessionRef.current;
       if (!current) return;
       syncSession({
         ...current,
-        patent: { query, totalCount, loadedCount: list.length },
+        patent: { query, totalCount, loadedCount: list.length, parts, page },
       });
     },
     [syncSession],
   );
+
+  /**
+   * 선배 발명 상세에서 "이 발명으로 특허 검색"을 눌렀을 때 (1.0의 발명→특허 흐름).
+   * 세션은 아직 건드리지 않는다 — 학생이 실제로 조회를 눌렀을 때만
+   * applyPatentResult 를 통해 기록된다.
+   */
+  const seedPatentSearch = useCallback((row: InventionRow) => {
+    setPatentSeed({
+      inventionId: row.id,
+      title: row.simple_title || row.original_title || "",
+      ipc: row.ipc,
+    });
+    setPatentEpoch((count) => count + 1);
+    setActivePanel("patent");
+  }, []);
 
   const dismissHandoff = useCallback(() => setHandoff(null), []);
 
@@ -411,6 +443,8 @@ export function useChat() {
     handoff,
     results,
     patents,
+    patentEpoch,
+    patentSeed,
     activePanel,
     setActivePanel,
     providers,
@@ -423,5 +457,6 @@ export function useChat() {
     clearFilters,
     focusInvention,
     applyPatentResult,
+    seedPatentSearch,
   };
 }

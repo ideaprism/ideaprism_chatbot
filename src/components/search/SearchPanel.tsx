@@ -1,22 +1,35 @@
 "use client";
 
-import { X } from "lucide-react";
+import { LayoutGrid, List, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { InventionCard } from "./InventionCard";
+import { InventionDetailModal } from "./InventionDetailModal";
 import {
   countFacets,
   filterRows,
   gradeNameMap,
   gradeNameOf,
-  splitTags,
+  nameMap,
 } from "@/lib/search/facets";
 import { cn } from "@/lib/utils";
 import type { SearchResults, FilterKind } from "@/hooks/useChat";
-import type { SearchSnapshot } from "@/types/search";
+import type { InventionRow, SearchSnapshot } from "@/types/search";
 
 /** 한 번에 그리는 카드 수 — 500장을 한꺼번에 그리면 브라우저가 버벅인다 */
 const PAGE_SIZE = 30;
+
+type ViewMode = "grid" | "list";
+
+/**
+ * 열 수는 "화면"이 아니라 "패널" 폭을 따라간다.
+ *
+ * 1.0은 검색 화면이 전체 폭이라 `md:` `lg:` 같은 화면 기준 단계로 충분했지만,
+ * 여기서는 채팅이 36%를 쓰고 남은 64%가 패널이다. 화면 기준으로 열을 잡으면
+ * 넓은 모니터에서도 카드가 짓눌린다. `@container` 는 "이 상자가 몇 rem인가"로
+ * 따지므로 패널이 좁아지든 넓어지든 카드 폭이 일정하게 유지된다.
+ */
+const GRID_COLUMNS = "grid grid-cols-2 gap-4 @xl:grid-cols-3 @xl:gap-5 @3xl:grid-cols-4";
 
 export function SearchPanel({
   snapshot,
@@ -24,16 +37,20 @@ export function SearchPanel({
   onToggleFilter,
   onClearFilters,
   onFocus,
+  onPatentSearch,
 }: {
   snapshot: SearchSnapshot;
   results: SearchResults;
   onToggleFilter: (kind: FilterKind, value: string) => void;
   onClearFilters: () => void;
   onFocus: (id: string | null) => void;
+  onPatentSearch?: (row: InventionRow) => void;
 }) {
   const [visible, setVisible] = useState(PAGE_SIZE);
+  const [view, setView] = useState<ViewMode>("grid");
 
   const grades = useMemo(() => gradeNameMap(results.grades), [results.grades]);
+  const categories = useMemo(() => nameMap(results.categories), [results.categories]);
 
   // 필터·통계는 메모리에서 즉시 계산한다 — 서버 왕복 없음
   const filtered = useMemo(
@@ -51,23 +68,38 @@ export function SearchPanel({
     snapshot.filters.problemTags.length +
     snapshot.filters.scamper.length;
 
+  const categoryNameOf = (row: InventionRow) =>
+    row.category_id != null ? (categories[row.category_id] ?? null) : null;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 통계 머리말 */}
+      {/* 통계 머리말 + 보기 전환 */}
       <div className="border-b border-line px-5 py-4">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-bold">
+          <h2 className="min-w-0 truncate text-sm font-bold">
             “{snapshot.keyword}” 선배들의 발명
           </h2>
           <span className="shrink-0 text-xs text-neutral-500">
             {filtered.length.toLocaleString()}건 보는 중
           </span>
         </div>
-        <p className="mt-1 text-[11px] text-neutral-400">
-          {snapshot.totalCount > snapshot.loadedCount
-            ? `전체 ${snapshot.totalCount.toLocaleString()}건 중 ${snapshot.loadedCount.toLocaleString()}건 기준`
-            : `전체 ${snapshot.totalCount.toLocaleString()}건 전부`}
-        </p>
+
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <p className="min-w-0 text-[11px] text-neutral-400">
+            {snapshot.totalCount > snapshot.loadedCount
+              ? `전체 ${snapshot.totalCount.toLocaleString()}건 중 ${snapshot.loadedCount.toLocaleString()}건 기준`
+              : `전체 ${snapshot.totalCount.toLocaleString()}건 전부`}
+          </p>
+
+          <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-white p-0.5">
+            <ViewButton active={view === "grid"} onClick={() => setView("grid")} label="카드보기">
+              <LayoutGrid className="size-3.5" />
+            </ViewButton>
+            <ViewButton active={view === "list"} onClick={() => setView("list")} label="리스트보기">
+              <List className="size-3.5" />
+            </ViewButton>
+          </div>
+        </div>
       </div>
 
       {/* 필터 칩 */}
@@ -113,55 +145,33 @@ export function SearchPanel({
         </div>
       </div>
 
-      {/* 상세 카드 */}
-      {focused && (
-        <div className="border-b border-line bg-amber-50/50 px-5 py-4">
-          <div className="mb-2 flex items-start justify-between gap-2">
-            <h3 className="text-sm font-bold">
-              {focused.simple_title ?? focused.original_title ?? "(제목 없음)"}
-            </h3>
-            <button
-              type="button"
-              onClick={() => onFocus(null)}
-              aria-label="상세 닫기"
-              className="shrink-0 text-neutral-400 hover:text-neutral-700"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-          <dl className="space-y-1.5 text-xs leading-relaxed">
-            <Field label="학년" value={gradeNameOf(focused, grades)} />
-            <Field label="요약" value={focused.simple_summary} />
-            <Field label="문제" value={focused.problem} />
-            <Field label="해결" value={focused.solution} />
-            <Field label="문제유형" value={splitTags(focused.problem_tag).join(", ")} />
-            <Field label="SCAMPER" value={splitTags(focused.scamper).join(", ")} />
-          </dl>
-        </div>
-      )}
-
-      {/* 결과 목록 */}
-      <div className="scroll-soft min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-4">
+      {/* 갤러리 */}
+      <div className="scroll-soft @container min-h-0 flex-1 overflow-y-auto px-5 py-4">
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-neutral-400">
             조건에 맞는 발명이 없어요. 필터를 하나 풀어 볼까요?
           </p>
         ) : (
           <>
-            {filtered.slice(0, visible).map((row) => (
-              <InventionCard
-                key={row.id}
-                row={row}
-                gradeName={gradeNameOf(row, grades)}
-                focused={row.id === snapshot.focusedId}
-                onClick={() => onFocus(row.id === snapshot.focusedId ? null : row.id)}
-              />
-            ))}
+            <div className={view === "list" ? "flex flex-col gap-3" : GRID_COLUMNS}>
+              {filtered.slice(0, visible).map((row) => (
+                <InventionCard
+                  key={row.id}
+                  row={row}
+                  view={view}
+                  gradeName={gradeNameOf(row, grades)}
+                  categoryName={categoryNameOf(row)}
+                  focused={row.id === snapshot.focusedId}
+                  onClick={() => onFocus(row.id)}
+                />
+              ))}
+            </div>
+
             {visible < filtered.length && (
               <button
                 type="button"
                 onClick={() => setVisible((count) => count + PAGE_SIZE)}
-                className="w-full rounded-xl border border-line bg-white py-2.5 text-xs text-neutral-600 hover:border-neutral-300"
+                className="mt-4 w-full rounded-xl border border-line bg-white py-2.5 text-xs text-neutral-600 hover:border-neutral-300"
               >
                 {filtered.length - visible}건 더 보기
               </button>
@@ -169,17 +179,45 @@ export function SearchPanel({
           </>
         )}
       </div>
+
+      {focused && (
+        <InventionDetailModal
+          row={focused}
+          gradeName={gradeNameOf(focused, grades)}
+          categoryName={categoryNameOf(focused)}
+          onClose={() => onFocus(null)}
+          onPatentSearch={onPatentSearch}
+        />
+      )}
     </div>
   );
 }
 
-function Field({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value) return null;
+function ViewButton({
+  active,
+  onClick,
+  label,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex gap-2">
-      <dt className="w-14 shrink-0 text-neutral-400">{label}</dt>
-      <dd className="min-w-0 flex-1">{value}</dd>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      className={cn(
+        "flex items-center justify-center rounded-full p-1.5 transition-colors",
+        active ? "bg-neutral-900 text-white" : "text-neutral-400 hover:text-neutral-700",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

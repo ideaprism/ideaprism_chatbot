@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { KiprisError, searchKipris } from "@/lib/kipris/service";
+import { KIPRIS_ROWS, KiprisError, searchKipris } from "@/lib/kipris/service";
 
 /**
- * 특허 패널에서 검색식을 직접 고쳐 다시 조회할 때 쓰는 창구 (PRD S-7).
+ * 특허 패널에서 검색식을 직접 고쳐 다시 조회하거나 쪽을 넘길 때 쓰는 창구 (PRD S-7).
  * 채팅을 거치지 않으므로 AI 호출을 쓰지 않는다 — 학생이 검색식을 몇 번을 고쳐도 비용이 들지 않는다.
  */
 export const runtime = "nodejs";
@@ -11,9 +11,11 @@ export const maxDuration = 30;
 
 export async function POST(request: Request) {
   let query: string;
+  let page: number;
   try {
-    const body = (await request.json()) as { query?: unknown };
+    const body = (await request.json()) as { query?: unknown; page?: unknown };
     query = typeof body.query === "string" ? body.query.trim() : "";
+    page = Number(body.page);
   } catch {
     return NextResponse.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 });
   }
@@ -23,11 +25,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const found = await searchKipris(query);
+    const found = await searchKipris(query, Number.isFinite(page) ? page : 1);
     return NextResponse.json({
       query,
       patents: found.patents,
       totalCount: found.totalCount,
+      page: found.page,
+      pageSize: KIPRIS_ROWS,
     });
   } catch (error) {
     const message =

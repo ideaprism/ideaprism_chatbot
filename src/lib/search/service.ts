@@ -14,9 +14,15 @@ import { buildPostgrestFilter, parseSearchQuery } from "./query";
 /** 한 번에 브라우저 메모리로 올리는 최대 건수 */
 export const MAX_LOADED = 500;
 
+/**
+ * 1.0의 검색 API와 같은 컬럼 묶음.
+ * 상세보기(1.0의 발명 상세 모달)가 쓰는 값까지 한 번에 실어 오므로,
+ * 카드를 눌렀을 때 서버를 다시 부르지 않는다.
+ */
 const COLUMNS =
   "id, grade_id, category_id, original_title, simple_title, simple_summary, " +
-  "detailed_summary, drawing_url, problem, solution, problem_tag, scamper, sdg";
+  "detailed_summary, drawing_url, problem, solution, problem_tag, scamper, sdg, " +
+  "invention_motive, next_step, curriculum, ipc";
 
 const SEARCH_COLUMNS = [
   "original_title",

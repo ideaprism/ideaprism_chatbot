@@ -22,6 +22,8 @@ export default function Home() {
     handoff,
     results,
     patents,
+    patentEpoch,
+    patentSeed,
     activePanel,
     setActivePanel,
     providers,
@@ -34,6 +36,7 @@ export default function Home() {
     clearFilters,
     focusInvention,
     applyPatentResult,
+    seedPatentSearch,
   } = useChat();
 
   if (!session) {
@@ -47,6 +50,8 @@ export default function Home() {
   const canSearch = Boolean(session.search && results);
   const hasNote =
     session.notes.length > 0 || Object.keys(session.quest.completed).length > 0;
+  // 5단계에서 AI가 만든 검색식이 있거나, 선배 발명에서 특허 검색으로 넘어왔을 때 열 수 있다
+  const canPatent = Boolean(session.patent || patentSeed);
 
   const panel =
     activePanel === "search" && canSearch && session.search && results ? (
@@ -56,13 +61,15 @@ export default function Home() {
         onToggleFilter={toggleFilter}
         onClearFilters={clearFilters}
         onFocus={focusInvention}
+        onPatentSearch={seedPatentSearch}
       />
     ) : activePanel === "note" ? (
       <NotePanel session={session} />
-    ) : activePanel === "patent" && session.patent ? (
+    ) : activePanel === "patent" && canPatent ? (
       <PatentPanel
-        key={session.patent.query}
+        key={patentEpoch}
         snapshot={session.patent}
+        seed={patentSeed}
         patents={patents}
         onResult={applyPatentResult}
       />
@@ -74,7 +81,7 @@ export default function Home() {
         quest={session.quest}
         activePanel={activePanel}
         onSelectPanel={setActivePanel}
-        available={{ search: canSearch, note: hasNote, patent: Boolean(session.patent) }}
+        available={{ search: canSearch, note: hasNote, patent: canPatent }}
         providerPicker={
           <ProviderPicker
             providers={providers}

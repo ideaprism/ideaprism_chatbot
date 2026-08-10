@@ -1,6 +1,10 @@
 /** 검색 관련 타입 — 1.0의 inventions 스키마를 그대로 따른다 */
 
-/** 발명 1건 (검색 결과 행) */
+/**
+ * 발명 1건 (검색 결과 행).
+ * 1.0의 검색 API가 싣는 컬럼과 같은 묶음이다 — 상세보기를 1.0과 똑같이 그리려면
+ * 목록 단계에서 이 값들이 이미 손에 있어야 카드를 눌렀을 때 기다림이 없다.
+ */
 export interface InventionRow {
   id: string;
   grade_id: number | null;
@@ -15,6 +19,14 @@ export interface InventionRow {
   problem_tag: string | null;
   scamper: string | null;
   sdg: string | null;
+  /** 발명 동기 — 상세보기 '상세 설명' 탭 */
+  invention_motive: string | null;
+  /** 어떻게 더 개선해 볼 수 있을까 — 상세보기 '상세 설명' 탭 */
+  next_step: string | null;
+  /** 관련 교과 */
+  curriculum: string | null;
+  /** IPC 분류 코드 — 특허 검색식의 재료 */
+  ipc: string | null;
 }
 
 export interface LookupItem {
