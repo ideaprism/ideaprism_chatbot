@@ -1,0 +1,348 @@
+/**
+ * 퀘스트 상태기계 (발명 5단계 + 0단계 만남).
+ *
+ * 아키텍처 원칙 2: 단계 관리는 "코드"가 한다. AI는 현 단계의 대본만 받아 연기하고,
+ * 승급은 complete_stage 도구 호출 + 여기 있는 검증 함수를 통과해야만 일어난다.
+ * (PRD F-1 / 리스크 대응 "AI가 단계를 건너뛰거나 늘어짐")
+ */
+
+import type { CharacterId } from "./characters";
+
+export type StageId = 0 | 1 | 2 | 3 | 4 | 5;
+export const STAGE_IDS: StageId[] = [0, 1, 2, 3, 4, 5];
+export const FINAL_STAGE: StageId = 5;
+
+/** 단계별 산출물 — 발명노트에 그대로 쌓인다 */
+export interface StageArtifacts {
+  0: { nickname: string; interests: string[]; matchedCharacter: CharacterId };
+  1: { problemArea: string; observations: string[] };
+  2: { problemStatement: string; target: string; pain: string };
+  3: { techniquesTried: string[]; candidates: string[] };
+  4: { title: string; summary: string; howItWorks: string; differentiator: string };
+  5: { kiprisQuery: string; similarPatents: string[]; differentiation: string };
+}
+
+export type AnyArtifact = StageArtifacts[StageId];
+
+export interface StageDefinition {
+  id: StageId;
+  /** 진행판에 표시할 짧은 이름 */
+  label: string;
+  /** 이 단계를 맡는 캐릭터 */
+  character: CharacterId;
+  /** AI에게 주입할 "이번 단계에 할 일" 대본 */
+  mission: string;
+  /** 학생에게 보여줄 완료 조건 (진행판 툴팁) */
+  doneWhen: string;
+  /** complete_stage 산출물 검증 — 통과하지 못하면 승급하지 않는다 */
+  validate: (artifact: unknown) => ValidationResult;
+}
+
+export type ValidationResult =
+  | { ok: true }
+  | { ok: false; missing: string[]; hint: string };
+
+// ── 검증 헬퍼 ────────────────────────────────────────────────
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function text(value: unknown, minLength: number): boolean {
+  return typeof value === "string" && value.trim().length >= minLength;
+}
+
+function list(value: unknown, minItems: number, minLength = 1): boolean {
+  return (
+    Array.isArray(value) &&
+    value.filter((item) => text(item, minLength)).length >= minItems
+  );
+}
+
+function check(
+  artifact: unknown,
+  rules: Array<[field: string, pass: boolean]>,
+  hint: string,
+): ValidationResult {
+  const missing = rules.filter(([, pass]) => !pass).map(([field]) => field);
+  return missing.length === 0 ? { ok: true } : { ok: false, missing, hint };
+}
+
+// ── 단계 정의 ────────────────────────────────────────────────
+
+export const STAGES: Record<StageId, StageDefinition> = {
+  0: {
+    id: 0,
+    label: "만남",
+    character: "teacher",
+    doneWhen: "별명과 관심사를 나누고, 함께할 발명 선배를 소개받으면 완료",
+    mission: `학생과 처음 만나는 단계다.
+- 따뜻하게 인사하고, 편하게 부를 별명을 물어본다. (실명·연락처는 절대 묻지 않는다)
+- 학년, 요즘 관심사, 발명 경험을 가볍게 2~3가지만 물어본다. 취조하듯 몰아붙이지 않는다.
+- 몇 마디 나눈 뒤 "너는 지유 선배랑 잘 맞겠는데?" 하고 지유 선배를 소개하며 배턴을 넘긴다.
+- 별명과 관심사를 알아냈으면 complete_stage 도구를 호출한다. (matchedCharacter는 "jiyou")`,
+    validate: (artifact) => {
+      const a = asRecord(artifact);
+      return check(
+        artifact,
+        [
+          ["nickname", text(a.nickname, 1)],
+          ["interests", list(a.interests, 1)],
+          ["matchedCharacter", a.matchedCharacter === "jiyou"],
+        ],
+        "별명과 관심사를 최소 1가지 이상 확인한 뒤에 다음 단계로 넘어갈 수 있어요.",
+      );
+    },
+  },
+
+  1: {
+    id: 1,
+    label: "문제 발견",
+    character: "jiyou",
+    doneWhen: "생활 속에서 불편했던 장면을 찾아내면 완료",
+    mission: `학생이 "무엇이 불편했는지"를 찾아내게 돕는 단계다.
+- "요즘 뭐가 불편했어?" 처럼 생활 경험에서 출발한다.
+- 학생이 주제를 꺼내면 search_inventions 도구로 선배들의 발명을 함께 본다.
+  숫자와 통계는 도구가 돌려주는 값만 말한다. 절대 지어내지 않는다.
+- 필터를 바꿔 보자고 제안할 때는 apply_filters 도구를 쓴다.
+- 불편했던 장면(관찰)이 1가지 이상 구체적으로 나오면 complete_stage를 호출한다.`,
+    validate: (artifact) => {
+      const a = asRecord(artifact);
+      return check(
+        artifact,
+        [
+          ["problemArea", text(a.problemArea, 2)],
+          ["observations", list(a.observations, 1, 5)],
+        ],
+        "어떤 분야에서 무엇이 불편했는지, 구체적인 장면이 1가지는 있어야 해요.",
+      );
+    },
+  },
+
+  2: {
+    id: 2,
+    label: "문제 정의",
+    character: "jiyou",
+    doneWhen: "누가·무엇이 불편한지 한 문장으로 정리되면 완료",
+    mission: `막연한 불편함을 "진짜 문제"로 좁히는 단계다.
+- "진짜 문제가 뭘까?"를 파고든다. 겉으로 보이는 증상과 원인을 구분하게 돕는다.
+- 누가(target) 어떤 상황에서 무엇 때문에(pain) 불편한지를 학생 입으로 말하게 한다.
+- 한 문장짜리 문제 정의문(problemStatement)이 만들어지면 update_note로 기록하고
+  complete_stage를 호출한다.`,
+    validate: (artifact) => {
+      const a = asRecord(artifact);
+      return check(
+        artifact,
+        [
+          ["problemStatement", text(a.problemStatement, 10)],
+          ["target", text(a.target, 2)],
+          ["pain", text(a.pain, 2)],
+        ],
+        "누가(target), 무엇 때문에(pain) 불편한지가 한 문장(problemStatement)으로 정리돼야 해요.",
+      );
+    },
+  },
+
+  3: {
+    id: 3,
+    label: "아이디어 탐색",
+    character: "jiyou",
+    doneWhen: "SCAMPER 기법을 2가지 이상 써서 아이디어 후보를 모으면 완료",
+    mission: `SCAMPER로 아이디어를 넓히는 단계다.
+- 기법 이름을 먼저 말하지 않는다. 사고방식으로 먼저 유도한 뒤
+  "이게 SCAMPER에서 ○○이라는 기법이야" 하고 알려준다.
+- 기법에 맞는 선배 발명을 보고 싶으면 apply_filters(scamper) 도구를 쓴다.
+- 서로 다른 기법을 2가지 이상 시도하고, 아이디어 후보가 2개 이상 나오면
+  complete_stage를 호출한다.`,
+    validate: (artifact) => {
+      const a = asRecord(artifact);
+      return check(
+        artifact,
+        [
+          ["techniquesTried(2개 이상)", list(a.techniquesTried, 2)],
+          ["candidates(2개 이상)", list(a.candidates, 2, 4)],
+        ],
+        "서로 다른 SCAMPER 기법 2가지와 아이디어 후보 2개가 모여야 다음으로 갈 수 있어요.",
+      );
+    },
+  },
+
+  4: {
+    id: 4,
+    label: "아이디어 확정",
+    character: "jiyou",
+    doneWhen: "발명의 이름·작동 방식·차별점이 정리되면 완료",
+    mission: `후보 중 하나를 골라 아이디어를 또렷하게 만드는 단계다.
+- 학생이 스스로 고르게 하되, 고르는 기준(문제를 얼마나 푸는가)을 짚어 준다.
+- 발명 이름(title), 한 줄 요약(summary), 어떻게 작동하는지(howItWorks),
+  기존 것과 뭐가 다른지(differentiator)를 채워 간다.
+- 다 채워지면 update_note로 기록하고 complete_stage를 호출한 뒤,
+  "이제 특허 탐정님을 모실게!" 하고 배턴을 넘긴다.`,
+    validate: (artifact) => {
+      const a = asRecord(artifact);
+      return check(
+        artifact,
+        [
+          ["title", text(a.title, 2)],
+          ["summary", text(a.summary, 10)],
+          ["howItWorks", text(a.howItWorks, 10)],
+          ["differentiator", text(a.differentiator, 5)],
+        ],
+        "발명 이름·요약·작동 방식·차별점 네 가지가 모두 채워져야 해요.",
+      );
+    },
+  },
+
+  5: {
+    id: 5,
+    label: "선행기술조사",
+    character: "detective",
+    doneWhen: "KIPRIS로 비슷한 특허를 찾아보고 차별점을 정리하면 완료",
+    mission: `아이디어가 얼마나 새로운지 확인하는 마지막 단계다.
+- 아이디어 요지로 generate_kipris_query 도구를 호출해 검색식을 만든다.
+- search_kipris 도구로 실제 조회하고, 결과에 나온 특허만 근거로 삼는다.
+  검색 결과에 없는 특허를 지어내지 않는다.
+- "무조건 등록됩니다" 같은 확답은 하지 않는다. "가능성이 있습니다"처럼 표현한다.
+- 유사 특허와 우리 아이디어의 차별점(differentiation)이 정리되면 complete_stage를 호출한다.`,
+    validate: (artifact) => {
+      const a = asRecord(artifact);
+      return check(
+        artifact,
+        [
+          ["kiprisQuery", text(a.kiprisQuery, 2)],
+          ["differentiation", text(a.differentiation, 10)],
+        ],
+        "검색식과 '기존 특허와 무엇이 다른지'가 있어야 발명노트를 완성할 수 있어요.",
+      );
+    },
+  },
+};
+
+// ── 세션 상태 ────────────────────────────────────────────────
+
+export interface QuestState {
+  currentStage: StageId;
+  /** 완료한 단계별 산출물 */
+  completed: Partial<Record<StageId, unknown>>;
+  /** 막힘 신호 (PRD F-6): 단계별 진입 시각과 승급 재시도 횟수 */
+  enteredAt: Partial<Record<StageId, number>>;
+  retries: Partial<Record<StageId, number>>;
+}
+
+export function initialQuestState(now: number = Date.now()): QuestState {
+  return { currentStage: 0, completed: {}, enteredAt: { 0: now }, retries: {} };
+}
+
+export function stageOf(state: QuestState): StageDefinition {
+  return STAGES[state.currentStage];
+}
+
+export function characterOf(state: QuestState): CharacterId {
+  return STAGES[state.currentStage].character;
+}
+
+export function isComplete(state: QuestState): boolean {
+  return state.completed[FINAL_STAGE] !== undefined;
+}
+
+export interface AdvanceResult {
+  ok: boolean;
+  state: QuestState;
+  /** AI에게 돌려줄 안내 (다음 단계 대본 또는 부족한 항목) */
+  message: string;
+  /** 캐릭터가 바뀌었는가 — 배턴터치 연출 트리거 */
+  characterChanged: boolean;
+  nextStage: StageId;
+  nextCharacter: CharacterId;
+}
+
+/**
+ * complete_stage 처리. 검증을 통과해야만 실제로 단계가 오른다.
+ * 실패해도 상태를 망가뜨리지 않고 재시도 횟수만 올린다.
+ */
+export function advanceStage(
+  state: QuestState,
+  stage: StageId,
+  artifact: unknown,
+  now: number = Date.now(),
+): AdvanceResult {
+  const stay = (message: string): AdvanceResult => ({
+    ok: false,
+    state,
+    message,
+    characterChanged: false,
+    nextStage: state.currentStage,
+    nextCharacter: STAGES[state.currentStage].character,
+  });
+
+  if (stage !== state.currentStage) {
+    return stay(
+      `지금은 ${state.currentStage}단계(${STAGES[state.currentStage].label}) 진행 중입니다. ` +
+        `${stage}단계는 완료 처리할 수 없습니다. 현재 단계에 집중하세요.`,
+    );
+  }
+
+  const result = STAGES[stage].validate(artifact);
+  if (!result.ok) {
+    const retried = { ...state.retries, [stage]: (state.retries[stage] ?? 0) + 1 };
+    return {
+      ...stay(
+        `아직 완료 조건을 채우지 못했습니다. 부족한 항목: ${result.missing.join(", ")}. ` +
+          `${result.hint} 학생과 대화를 이어가며 이 부분을 채운 뒤 다시 호출하세요.`,
+      ),
+      state: { ...state, retries: retried },
+    };
+  }
+
+  const nextStage = (stage === FINAL_STAGE ? FINAL_STAGE : ((stage + 1) as StageId));
+  const nextState: QuestState = {
+    ...state,
+    currentStage: nextStage,
+    completed: { ...state.completed, [stage]: artifact },
+    enteredAt: { ...state.enteredAt, [nextStage]: now },
+  };
+
+  if (stage === FINAL_STAGE) {
+    return {
+      ok: true,
+      state: nextState,
+      message:
+        "모든 단계를 완주했습니다! 발명노트가 완성되었습니다. " +
+        "학생에게 축하 인사를 건네고, 노트를 출력해 선생님께 보여드리라고 안내하세요.",
+      characterChanged: false,
+      nextStage: FINAL_STAGE,
+      nextCharacter: STAGES[FINAL_STAGE].character,
+    };
+  }
+
+  const nextDef = STAGES[nextStage];
+  const changed = STAGES[stage].character !== nextDef.character;
+
+  return {
+    ok: true,
+    state: nextState,
+    message: changed
+      ? `${stage}단계 완료! 다음은 ${nextStage}단계 "${nextDef.label}"이고, ` +
+        `담당은 ${nextDef.character}입니다. 지금 맡은 역할로 따뜻하게 퇴장 인사를 건네고 ` +
+        `다음 캐릭터를 소개하며 마무리하세요. 다음 캐릭터의 대사는 당신이 쓰지 않습니다.`
+      : `${stage}단계 완료! 이어서 ${nextStage}단계 "${nextDef.label}"을 진행하세요.\n${nextDef.mission}`,
+    characterChanged: changed,
+    nextStage,
+    nextCharacter: nextDef.character,
+  };
+}
+
+/** 진행판(S-5)에 넘길 요약 */
+export function progressView(state: QuestState) {
+  return STAGE_IDS.map((id) => ({
+    id,
+    label: STAGES[id].label,
+    doneWhen: STAGES[id].doneWhen,
+    status:
+      state.completed[id] !== undefined
+        ? ("done" as const)
+        : id === state.currentStage
+          ? ("current" as const)
+          : ("todo" as const),
+  }));
+}

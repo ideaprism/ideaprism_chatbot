@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fbfaf7;
+  --foreground: #1f1d1a;
+  --panel: #ffffff;
+  --line: #e8e4dc;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-line: var(--line);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
+    Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all;
+}
+
+/* 스트리밍 중 커서 */
+@keyframes caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.caret::after {
+  content: "▍";
+  margin-left: 1px;
+  animation: caret 1s step-end infinite;
+  opacity: 0.5;
+}
+
+/* 채팅 스크롤 영역 */
+.scroll-soft {
+  scrollbar-width: thin;
+  scrollbar-color: #d6d0c6 transparent;
+}
+.scroll-soft::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-soft::-webkit-scrollbar-thumb {
+  background: #d6d0c6;
+  border-radius: 9999px;
+}
