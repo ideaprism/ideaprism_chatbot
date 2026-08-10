@@ -21,13 +21,19 @@ export function gradeNameMap(grades: LookupItem[]): GradeNames {
   return map;
 }
 
-/** "정리,결합" → ["정리","결합"] (빈 값과 '-' 는 버린다) */
+/**
+ * "정리,결합" → ["정리","결합"] (빈 값과 '-' 는 버린다)
+ *
+ * 같은 태그가 한 행에 두 번 적힌 자료가 실제로 있어서 중복도 정리한다.
+ * 안 그러면 통계에서 한 건이 두 번 세어지고, 화면에서도 같은 칩이 두 개 그려진다.
+ */
 export function splitTags(value: string | null | undefined): string[] {
   if (!value) return [];
-  return value
+  const tags = value
     .split(",")
     .map((tag) => tag.trim())
     .filter((tag) => tag.length > 0 && tag !== "-");
+  return [...new Set(tags)];
 }
 
 export function gradeNameOf(row: InventionRow, grades: GradeNames): string | null {

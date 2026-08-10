@@ -61,6 +61,14 @@ test("쉼표로 붙은 태그를 나누고 빈 값과 '-' 는 버린다", () => 
   assert.deepEqual(splitTags("  "), []);
 });
 
+test("한 행에 같은 태그가 두 번 적혀 있어도 한 번만 센다", () => {
+  // 실제 자료에 'M(변형), M(변형)' 처럼 중복이 있어 화면 칩이 두 개 그려졌다
+  assert.deepEqual(splitTags("M(변형), M(변형)"), ["M(변형)"]);
+
+  const rows = [row({ id: "x", grade_id: 1, scamper: "M(변형), M(변형)" })];
+  assert.deepEqual(countFacets(rows, names).scamper, { "M(변형)": 1 });
+});
+
 // ── 필터 ────────────────────────────────────────────────────
 
 test("필터가 없으면 원본을 그대로 돌려준다", () => {

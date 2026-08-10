@@ -9,20 +9,33 @@
  * 그래서 선택기는 대화가 시작되면 잠긴다.
  */
 
-import type { AiEffort, ProviderId } from "./types";
+import { isProviderId, type AiEffort, type ProviderId } from "./types";
+
+/**
+ * 환경변수를 읽되, 비어 있으면 없는 것으로 친다.
+ * .env.local 에 `NAME=` 처럼 값 없이 적어 두면 빈 문자열이 오는데,
+ * ?? 는 빈 문자열을 "값이 있다"고 보기 때문에 기본값이 적용되지 않는다.
+ * (실제로 DEFAULT_AI_PROVIDER= 빈 줄 때문에 대화가 500으로 죽은 적이 있다)
+ */
+function env(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
 
 /** 키가 여러 개 있을 때 기본으로 고를 제공사 */
-export const DEFAULT_PROVIDER: ProviderId =
-  (process.env.DEFAULT_AI_PROVIDER as ProviderId | undefined) ?? "claude";
+const requestedDefault = env("DEFAULT_AI_PROVIDER");
+export const DEFAULT_PROVIDER: ProviderId = isProviderId(requestedDefault)
+  ? requestedDefault
+  : "claude";
 
 /**
  * 제공사별 대화 모델.
  * 환경변수로 덮어쓸 수 있어, 대표님이 코드를 고치지 않고도 다른 모델을 시험할 수 있다.
  */
 export const CHAT_MODELS: Record<ProviderId, string> = {
-  claude: process.env.CLAUDE_MODEL ?? "claude-sonnet-5",
-  openai: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
-  gemini: process.env.GEMINI_MODEL ?? "gemini-3.6-flash",
+  claude: env("CLAUDE_MODEL") ?? "claude-sonnet-5",
+  openai: env("OPENAI_MODEL") ?? "gpt-5.4-mini",
+  gemini: env("GEMINI_MODEL") ?? "gemini-3.6-flash",
 };
 
 /** 화면에 보여 줄 이름 */

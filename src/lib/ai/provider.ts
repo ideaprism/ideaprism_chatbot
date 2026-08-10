@@ -10,7 +10,7 @@ import { createClaudeAdapter } from "./adapters/claude";
 import { createGeminiAdapter } from "./adapters/gemini";
 import { createOpenAiAdapter } from "./adapters/openai";
 import { DEFAULT_PROVIDER } from "./config";
-import { PROVIDER_IDS, type AiAdapter, type ProviderId } from "./types";
+import { isProviderId, PROVIDER_IDS, type AiAdapter, type ProviderId } from "./types";
 
 const FACTORIES: Record<ProviderId, () => AiAdapter> = {
   claude: createClaudeAdapter,
@@ -49,11 +49,11 @@ export function resolveProvider(requested: ProviderId | null | undefined): {
   adapter: AiAdapter;
   fellBack: boolean;
 } | null {
-  const order: ProviderId[] = [
-    ...(requested ? [requested] : []),
-    DEFAULT_PROVIDER,
-    ...PROVIDER_IDS,
-  ];
+  // 알 수 없는 이름이 섞여 들어와도 여기서 걸러낸다
+  // (오래된 세션이나 오타 난 환경변수 때문에 대화가 죽지 않도록)
+  const order = [requested, DEFAULT_PROVIDER, ...PROVIDER_IDS].filter(
+    (id): id is ProviderId => isProviderId(id),
+  );
 
   for (const id of order) {
     const adapter = FACTORIES[id]();
