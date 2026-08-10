@@ -5,66 +5,93 @@
 
 ---
 
-## 다음 할 일 (대표님 요청)
+## 다음 할 일
+
+대표님 확인 대기 중. 아래 "방금 끝난 일"을 브라우저에서 직접 만져 보시고
+어색한 곳을 알려 주시면 이어서 손본다.
+
+미리 알아 둘 만한 것:
+
+- **Claude 미검증** — `ANTHROPIC_API_KEY` 가 아직 비어 있다 (`sk-ant-` 로 시작하는 키 필요).
+  OpenAI·Gemini는 실제 API로 확인됨.
+- **사람이 여러 턴 이어서 0→5단계 완주하는 테스트는 아직** (PRD 1장 성공 기준).
+- **검색 결과 500건은 새로고침하면 사라진다** — 브라우저 메모리에만 두기 때문
+  (세션 요약만 sessionStorage). 새로고침 후 검색 패널이 안 열리면 이 때문이다.
+  고치려면 결과를 다시 받아 오는 길을 만들어야 한다 (지금은 의도된 동작).
+- **AI가 `show_invention` 을 부르면 상세 모달이 화면 전체를 덮는다.** 학생이
+  "이거 자세히 볼래" 라고 했을 때는 자연스럽지만, AI가 먼저 예를 들 때는
+  읽던 말풍선을 가린다. 실제로 써 보고 거슬리면 "카드만 강조 + 클릭하면 열기"로
+  바꾸면 된다 (`SearchPanel` 의 `focused` / `onFocus` 한 곳만 손보면 됨).
+
+---
+
+## 방금 끝난 일 (2026-08-11) — 우측 패널을 1.0에 맞춤
+
+대표님 요청:
 
 > "우측 화면을 수정할거야. **최대한 ideaprism처럼** 수정해줘.
 > 챗봇은 곧 ideaprism을 쉽게 이용하게 해주는 목적도 있는거야.
->
-> 1. 발명 카드가 **리스트보기 / 카드보기 선택**이 되야하고 기본은 화면에 따라 **2~4열**
+> 1. 발명 카드가 **리스트보기 / 카드보기 선택** … 기본은 화면에 따라 **2~4열**
 > 2. 발명을 클릭했을 때 **상세보기도 ideaprism 그대로**
 > 3. **특허검색도 ideaprism 그대로**"
 
-즉 **우측 패널을 1.0의 검색 화면에 최대한 가깝게** 다시 만드는 일이다.
-챗봇이 "1.0을 쉽게 쓰게 해주는 입구"라는 관점이므로, 학생이 챗봇에서 본 화면과
-1.0에서 보던 화면이 따로 놀면 안 된다.
+셋 다 1.0 코드를 이식해 다시 만들었다. 커밋 `07c4d3c`.
+
+| 요청 | 2.0 파일 | 1.0 원본 |
+|---|---|---|
+| 갤러리 + 카드 | `search/SearchPanel.tsx`, `search/InventionCard.tsx` | `SearchResultGallery.tsx`, `InventionCard.tsx` |
+| 상세보기 | `search/InventionDetailModal.tsx` (신규) | `InventionDetailModal.tsx` |
+| 특허검색 | `patent/PatentPanel.tsx`, `patent/PatentCard.tsx` (신규) | `patent/PatentSearchView.tsx` |
+| 태그 색·아이콘 | `lib/tag-styles.ts` (신규) | `utils/tag-styles.ts` |
+| OPSME 해석 | `lib/kipris/opsme.ts` (신규) | `utils/opsme-keywords.ts` |
+
+### 이 작업에서 굳힌 결정 (다시 고민하지 말 것)
+
+- **열 수는 `@container` 로 패널 폭 기준.** 화면 기준(`md:` `lg:`)으로 잡으면
+  채팅이 36%를 쓰기 때문에 넓은 모니터에서도 카드가 짓눌린다.
+  실측: 1440 화면 → 패널 921px → **4열**, 1024 화면 → 655px → **3열**, 그 아래 2열.
+- **상세보기에 필요한 컬럼을 검색 결과에 함께 싣는다** (`invention_motive`,
+  `next_step`, `curriculum`, `ipc`). 1.0의 검색 API가 이미 500건에 같은 묶음을
+  싣고 있어 검증된 범위다. 덕분에 카드를 눌러도 서버를 다시 부르지 않는다.
+- **특허 5칸(OPSME)은 세션에 `parts` 로 실린다.** 검색식 문자열만 들고 있으면
+  학생이 "대상"과 "문제"를 따로 고칠 수가 없다. 검색식 문법은 여전히
+  `buildKiprisQuery` 한 곳에서만 만든다 (아키텍처 원칙 1).
+- **갈래 기본값은 1.0과 같이 대상(O)·해결수단(S)만.** 다섯 갈래를 다 켜면
+  조건이 겹쳐 결과가 몇 건으로 줄어든다 (실측: 4건 → O·S만 켜니 222건).
+  단, **5단계에서 AI가 직접 고른 갈래는 그대로 켠다** — 임의로 끄면 AI가
+  학생에게 말한 검색식과 화면의 검색식이 달라진다.
+- **특허 패널은 "새 재료가 왔을 때만" 다시 세운다** (`useChat` 의 `patentEpoch`).
+  학생이 스스로 조회하는 동안에는 고쳐 둔 낱말과 켜 둔 갈래가 남는다.
+- **발명 상세의 "이 발명으로 특허 검색"** 은 1.0과 같은 `kipris_search_keywords`
+  표를 읽어 5칸을 채운다. 같은 발명이면 1.0과 같은 검색식이 나온다.
+  이때 세션은 아직 건드리지 않고, 학생이 실제로 "검색"을 눌렀을 때만 기록된다.
+
+### 신설한 서버 창구 (읽기 전용, 1.0과 같은 표)
+
+- `GET /api/ipc?code=A45B` → `ipc_descriptions` 의 뜻
+- `GET /api/invention-keywords?id=…` → `kipris_search_keywords` 의 OPSME 5칸
 
 ### 1.0 참고 코드 (운영 중 — 읽기만, 절대 수정 금지)
 
 기준 경로: `C:\Users\user\Documents\클맥_ideaprism`
 
-| 무엇 | 파일 | 줄 수 |
-|---|---|---|
-| **갤러리 (그리드/리스트 전환)** | `src/components/features/SearchResultGallery.tsx` | 39 |
-| **발명 카드** | `src/components/features/InventionCard.tsx` | — |
-| **발명 상세 모달** | `src/components/features/InventionDetailModal.tsx` | 360 |
-| **필터 패널** | `src/components/features/FacetFilterPanel.tsx`, `FilterPanel.tsx` | — |
-| **검색 페이지 전체** | `src/components/features/ClientSearchPage.tsx` | 297 |
-| **특허 검색 화면** | `src/components/patent/PatentSearchView.tsx` | 831 |
-| **특허+발명 통합 모달** | `src/app/test/kipris-search/IntegratedInventionModal.tsx` | 846 |
-| 상세 페이지(라우트) | `src/app/inventions/[id]/page.tsx` | 154 |
-
-**이미 확인한 핵심 사실 — 다시 조사할 필요 없음:**
-
-```tsx
-// SearchResultGallery.tsx — 대표님이 말씀하신 "2~4열"이 여기 그대로 있다
-viewMode === 'list'
-  ? "flex flex-col gap-4"
-  : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8"
-```
-
-카드를 누르면 `InventionDetailModal` 이 열린다. 2.0도 같은 구조로 가면 된다.
-
-### 2.0에서 고칠 파일
-
-| 파일 | 지금 상태 |
+| 무엇 | 파일 |
 |---|---|
-| `src/components/search/SearchPanel.tsx` | 자체 제작. 통계 머리말 + 필터 칩 + 세로 카드 목록 + 인라인 상세 |
-| `src/components/search/InventionCard.tsx` | 자체 제작. 가로형 작은 카드 1종뿐 |
-| `src/components/patent/PatentPanel.tsx` | 자체 제작. 검색식 입력 + 결과 카드 |
+| 검색 페이지 전체 | `src/components/features/ClientSearchPage.tsx` |
+| 필터 패널 | `src/components/features/FacetFilterPanel.tsx`, `FilterPanel.tsx` |
+| 특허+발명 통합 모달 | `src/app/test/kipris-search/IntegratedInventionModal.tsx` |
+| 상세 페이지(라우트) | `src/app/inventions/[id]/page.tsx` |
 
-셋 다 1.0을 참고하지 않고 처음부터 만든 것이라, 이번에 1.0 쪽으로 맞춰야 한다.
+### 우측 패널을 더 손볼 때 지킬 것
 
-### 작업할 때 지킬 것
-
-- **우측 패널 폭이 화면의 약 64%** 다 (`WorkspaceShell.tsx`, 채팅이 36%).
-  1.0은 전체 화면이라 그대로 옮기면 좁다. 2~4열은 **패널 폭 기준**으로 잡아야 한다
-  (`@container` 쿼리를 쓰거나 열 수를 한 단계씩 낮추는 식).
 - 필터 클릭은 **서버 왕복 없이** 즉시 반영돼야 한다 (PRD 8장, 체감 0.1초).
-  지금 `facets.ts`의 순수 함수로 메모리에서 계산 중 — 이 구조는 유지할 것.
-- 필터를 바꾸면 세션에 실려 **다음 턴에 AI도 같은 화면을 본다** (PRD S-4 양방향 동기화).
-  `useChat.toggleFilter` 참고.
+  `facets.ts` 의 순수 함수로 메모리에서 계산 중 — 이 구조는 유지할 것.
+- 필터를 바꾸면 세션에 실려 **다음 턴에 AI도 같은 화면을 본다** (PRD S-4).
 - 카드 500장을 한 번에 그리면 버벅인다. 지금 30장씩 "더 보기" 방식.
-- 발명 이미지(`drawing_url`)는 주소가 제각각이라 `next/image` 최적화 없이 `<img>` 로 띄운다.
+- 발명 이미지(`drawing_url`)와 특허 도면은 주소가 제각각이라 `next/image`
+  최적화 없이 `<img>` 로 띄운다.
+- 태그 색값(HEX)은 1.0과 한 글자도 다르지 않게 유지할 것. 여기서 색을
+  "예쁘게" 고치면 두 서비스가 따로 놀기 시작한다.
 
 ---
 
@@ -82,12 +109,16 @@ viewMode === 'list'
 | P5 | 주제 이탈 환기, 대화 압축, 비용 가드, 단계별 사용량 | ✅ |
 | 추가 | 모델 3사 비교 (Claude·OpenAI·Gemini) | ✅ |
 | 추가 | 대화 흐름 지침을 `flow/` 폴더로 분리 | ✅ |
+| 추가 | 우측 패널을 1.0 화면에 맞춤 (갤러리·상세·특허) | ✅ |
 
 ### 실제 API로 검증된 것 / 안 된 것
 
 - ✅ **OpenAI(`gpt-5.4-mini`)로 전 구간** — 스트리밍, 감정 태그, 검색(216건),
   필터(초등학교 123건), KIPRIS(2,874건), 퀘스트 승급, 배턴터치, 노트 저장
 - ✅ **Gemini(`gemini-3.6-flash`)** — 검색까지
+- ✅ **우측 패널 3종 (2026-08-11)** — 실제 브라우저에서 0단계 완주 → 검색 →
+  4열(1440)/3열(1024) → 리스트 전환 → 상세 모달 두 탭 → "이 발명으로 특허 검색"
+  → OPSME 5칸 자동 채움 + IPC 뜻 + 222건 조회 + 2/23 쪽 넘기기까지 확인
 - ⚠️ **Claude 미검증** — `ANTHROPIC_API_KEY` 가 아직 비어 있음 (`sk-ant-` 로 시작하는 키 필요)
 - ⚠️ **브라우저에서 사람이 여러 턴 이어서 대화한 완주 테스트는 아직** (PRD 1장 성공 기준)
 
@@ -97,7 +128,7 @@ viewMode === 'list'
 personas/     캐릭터 대본 — "어떻게 말하는가"    (대표님이 고침)
 flow/         대화 흐름 지침 — "어떻게 흘러가는가" (대표님이 고침, 9개 파일)
 supabase/     invention_notes DDL (이미 적용됨)
-tests/        회귀 테스트 60개
+tests/        회귀 테스트 67개
 src/lib/
   ai/         types·config·provider + adapters/{claude,openai,gemini}
   quest.ts    퀘스트 상태기계 + 승급 검증   ← 단계 판정은 여기만
@@ -105,9 +136,13 @@ src/lib/
   tool-handlers.ts  도구 실행기 (서버)
   prompt.ts   프롬프트 조립 + 표식 파서 + 대화 압축
   flow.ts     flow/*.md 로더 (없으면 코드 기본값)
+  tag-styles.ts  태그 색·아이콘 (1.0 이식 — 색값 그대로 유지할 것)
   search/     검색어 파서 · Supabase 조회 · 필터/통계(순수 함수)
-  kipris/     검색식 생성 · 특허청 조회
+  kipris/     검색식 생성 · 특허청 조회 · OPSME 키워드 해석
   notes/      발명노트 계산 · 저장
+src/components/
+  search/     SearchPanel(갤러리) · InventionCard · InventionDetailModal
+  patent/     PatentPanel(OPSME 검색식) · PatentCard
 ```
 
 ---
@@ -146,7 +181,9 @@ src/lib/
 - 한글이 든 요청을 `curl -d '...'` 로 인라인 전달하면 **인코딩이 깨진다.**
   파일로 쓴 뒤 `--data-binary @파일` 로 보낼 것.
 - 점검: http://localhost:3000/api/health — 키 값은 안 보이고 준비 여부만 나온다.
-- 명령: `npm run dev` / `npm test` (60개) / `npm run typecheck` / `npm run lint` / `npm run build`
+- 명령: `npm run dev` / `npm test` (67개) / `npm run typecheck` / `npm run lint` / `npm run build`
+- `npm run lint` 는 **effect 안에서 setState 하는 것을 오류로 막는다.** 억누르지 말고
+  구조를 바꿀 것 (값을 바꾸는 곳에서 함께 바꾸거나, 비동기 콜백 안으로 옮기기).
 
 ## 대표님과 일하는 방식
 
