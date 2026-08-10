@@ -48,6 +48,26 @@ body {
   opacity: 0.5;
 }
 
+/* 인쇄: 발명노트만 남기고 화면 요소는 숨긴다 (PRD S-6 완성본 인쇄) */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+    padding: 0;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
 /* 채팅 스크롤 영역 */
 .scroll-soft {
   scrollbar-width: thin;

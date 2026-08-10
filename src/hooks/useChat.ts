@@ -18,6 +18,9 @@ export interface SearchResults {
 
 export type FilterKind = "grades" | "problemTags" | "scamper";
 
+/** 우측 패널에 무엇을 띄울지 */
+export type PanelKind = "search" | "note" | "patent";
+
 interface RunOptions {
   intent?: "opening" | "handoff";
   handoffFrom?: CharacterId | null;
@@ -52,6 +55,7 @@ export function useChat() {
   const [error, setError] = useState<string | null>(null);
   const [handoff, setHandoff] = useState<Handoff | null>(null);
   const [results, setResults] = useState<SearchResults | null>(null);
+  const [activePanel, setActivePanel] = useState<PanelKind | null>(null);
 
   /** 스트리밍 도중에도 최신 값을 읽어야 해서 ref로 함께 들고 간다 */
   const sessionRef = useRef<SessionState | null>(null);
@@ -182,6 +186,8 @@ export function useChat() {
                   grades: event.grades,
                   categories: event.categories,
                 });
+                // 새로 검색했으면 우측을 검색 결과로 돌린다(PRD S-3)
+                setActivePanel("search");
                 break;
               case "state":
                 syncSession(event.session);
@@ -272,6 +278,7 @@ export function useChat() {
     setHandoff(null);
     setError(null);
     setResults(null);
+    setActivePanel(null);
     void run(null, fresh);
   }, [run, syncMessages]);
 
@@ -331,6 +338,8 @@ export function useChat() {
     error,
     handoff,
     results,
+    activePanel,
+    setActivePanel,
     send,
     restart,
     dismissHandoff,

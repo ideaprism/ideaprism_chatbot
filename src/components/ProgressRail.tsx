@@ -1,18 +1,39 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, NotebookPen, ScrollText, Search } from "lucide-react";
 
 import { getCharacter } from "@/lib/characters";
 import { progressView, STAGES, type QuestState } from "@/lib/quest";
 import { cn } from "@/lib/utils";
+import type { PanelKind } from "@/hooks/useChat";
 
-/** 상단 고정 진행판 (PRD S-5) — 0→5단계, 현재 단계 강조 */
-export function ProgressRail({ quest }: { quest: QuestState }) {
+const PANEL_TABS: Array<{
+  kind: PanelKind;
+  label: string;
+  icon: typeof Search;
+}> = [
+  { kind: "search", label: "검색", icon: Search },
+  { kind: "note", label: "노트", icon: NotebookPen },
+  { kind: "patent", label: "특허", icon: ScrollText },
+];
+
+/** 상단 고정 진행판 (PRD S-5) — 0→5단계, 현재 단계 강조 + 우측 패널 전환 */
+export function ProgressRail({
+  quest,
+  activePanel,
+  onSelectPanel,
+  available,
+}: {
+  quest: QuestState;
+  activePanel: PanelKind | null;
+  onSelectPanel: (kind: PanelKind | null) => void;
+  available: Record<PanelKind, boolean>;
+}) {
   const steps = progressView(quest);
   const character = getCharacter(STAGES[quest.currentStage].character);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-line bg-panel/90 backdrop-blur">
+    <header className="no-print sticky top-0 z-20 border-b border-line bg-panel/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-bold tracking-tight">IdeaPrism</span>
@@ -57,6 +78,33 @@ export function ProgressRail({ quest }: { quest: QuestState }) {
         <p className="text-xs text-neutral-500">
           지금 함께하는 사람 · <span className="font-medium">{character.name}</span>
         </p>
+
+        <nav className="flex items-center gap-1">
+          {PANEL_TABS.map(({ kind, label, icon: Icon }) => {
+            const enabled = available[kind];
+            const active = activePanel === kind;
+            return (
+              <button
+                key={kind}
+                type="button"
+                disabled={!enabled}
+                title={enabled ? `${label} 패널 열기` : `${label}은 아직 열 수 없어요`}
+                onClick={() => onSelectPanel(active ? null : kind)}
+                className={cn(
+                  "flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                  !enabled && "cursor-not-allowed border-line bg-white text-neutral-300",
+                  enabled && active && "border-neutral-800 bg-neutral-900 text-white",
+                  enabled &&
+                    !active &&
+                    "border-line bg-white text-neutral-600 hover:border-neutral-300",
+                )}
+              >
+                <Icon className="size-3.5" />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
     </header>
   );

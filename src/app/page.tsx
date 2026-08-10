@@ -5,6 +5,7 @@ import { RotateCcw, TriangleAlert } from "lucide-react";
 import { Composer } from "@/components/Composer";
 import { HandoffOverlay } from "@/components/HandoffOverlay";
 import { MessageList } from "@/components/MessageList";
+import { NotePanel } from "@/components/note/NotePanel";
 import { ProgressRail } from "@/components/ProgressRail";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { WorkspaceShell } from "@/components/WorkspaceShell";
@@ -18,6 +19,8 @@ export default function Home() {
     error,
     handoff,
     results,
+    activePanel,
+    setActivePanel,
     send,
     restart,
     dismissHandoff,
@@ -34,13 +37,35 @@ export default function Home() {
     );
   }
 
+  const canSearch = Boolean(session.search && results);
+  const hasNote =
+    session.notes.length > 0 || Object.keys(session.quest.completed).length > 0;
+
+  const panel =
+    activePanel === "search" && canSearch && session.search && results ? (
+      <SearchPanel
+        snapshot={session.search}
+        results={results}
+        onToggleFilter={toggleFilter}
+        onClearFilters={clearFilters}
+        onFocus={focusInvention}
+      />
+    ) : activePanel === "note" ? (
+      <NotePanel session={session} />
+    ) : undefined;
+
   return (
     <main className="flex h-dvh flex-col">
-      <ProgressRail quest={session.quest} />
+      <ProgressRail
+        quest={session.quest}
+        activePanel={activePanel}
+        onSelectPanel={setActivePanel}
+        available={{ search: canSearch, note: hasNote, patent: false }}
+      />
 
       <WorkspaceShell
         chat={
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="no-print flex min-h-0 flex-1 flex-col">
             <MessageList messages={messages} streaming={streaming} />
 
             {error && (
@@ -62,17 +87,7 @@ export default function Home() {
             <Composer onSend={send} disabled={streaming} />
           </div>
         }
-        panel={
-          session.search && results ? (
-            <SearchPanel
-              snapshot={session.search}
-              results={results}
-              onToggleFilter={toggleFilter}
-              onClearFilters={clearFilters}
-              onFocus={focusInvention}
-            />
-          ) : undefined
-        }
+        panel={panel}
       />
 
       <HandoffOverlay handoff={handoff} onDone={dismissHandoff} />

@@ -9,6 +9,7 @@ import {
   MAX_TOOL_ROUNDS,
 } from "@/lib/ai/config";
 import { normalizeEmotion } from "@/lib/characters";
+import { saveNote } from "@/lib/notes/repository";
 import { loadPersona } from "@/lib/personas";
 import {
   buildSystemBlocks,
@@ -133,6 +134,8 @@ export async function POST(request: Request) {
       };
 
       const usage = { input: 0, output: 0, cacheRead: 0 };
+      /** 이번 턴에 노트나 단계가 바뀌었는가 — 바뀐 턴에만 저장한다 */
+      let noteDirty = false;
 
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -176,6 +179,9 @@ export async function POST(request: Request) {
           const results: Anthropic.ToolResultBlockParam[] = [];
 
           for (const call of toolUses) {
+            if (call.name === "update_note" || call.name === "complete_stage") {
+              noteDirty = true;
+            }
             const toolName = isToolName(call.name) ? call.name : null;
             if (toolName) send({ type: "tool", name: toolName, status: "start" });
 
@@ -214,6 +220,12 @@ export async function POST(request: Request) {
             emotion: normalizeEmotion(characterId, null),
             character: characterId,
           });
+        }
+
+        // 발명노트 저장은 뒷일이다. 실패해도 대화를 끊지 않고 서버 로그에만 남긴다.
+        if (noteDirty) {
+          const saved = await saveNote(session);
+          if (!saved.ok) console.warn("[chat] 발명노트 저장 실패:", saved.detail);
         }
 
         send({ type: "state", session });
