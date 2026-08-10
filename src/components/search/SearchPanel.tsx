@@ -71,8 +71,9 @@ export function SearchPanel({
   const categoryNameOf = (row: InventionRow) =>
     row.category_id != null ? (categories[row.category_id] ?? null) : null;
 
+  // relative — 상세 모달이 이 상자 안에만 얹히도록. 화면 전체를 덮으면 대화창이 가려진다.
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       {/* 통계 머리말 + 보기 전환 */}
       <div className="border-b border-line px-5 py-4">
         <div className="flex items-baseline justify-between gap-3">

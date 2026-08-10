@@ -12,7 +12,15 @@
 import "server-only";
 
 import { handoffExitText, stageMission } from "./flow";
-import { buildKiprisQuery, describeFormula } from "./kipris/formula";
+import {
+  buildKiprisQuery,
+  describeFormula,
+  DEFAULT_GROUPS,
+  filledGroups,
+  GROUP_KEYS,
+  pickGroups,
+  type GroupKey,
+} from "./kipris/formula";
 import { KiprisError, searchKipris } from "./kipris/service";
 import { advanceStage, STAGES, STAGE_IDS, type StageId } from "./quest";
 import {
@@ -149,6 +157,32 @@ function describePatents(query: string, totalCount: number, patents: Patent[]): 
   ];
 
   return lines.join("\n");
+}
+
+const GROUP_LABELS: Record<GroupKey, string> = {
+  object: "발명 대상",
+  problem: "문제",
+  solution: "해결 수단",
+  method: "방법·원리",
+  effect: "효과",
+};
+
+/**
+ * 검색식에 넣지 않고 남겨 둔 낱말을 AI에게 알려 준다.
+ * 안 알려 주면 AI는 자기가 고른 낱말이 통째로 사라진 줄 알고 다시 만들려 든다.
+ */
+function describeReserved(parts: QueryParts, activeGroups: GroupKey[]): string | null {
+  const reserved = GROUP_KEYS.filter(
+    (key) => !activeGroups.includes(key) && (parts[key]?.length ?? 0) > 0,
+  );
+  if (reserved.length === 0) return null;
+
+  return [
+    "남겨 둔 낱말 (검색식에는 아직 넣지 않았습니다):",
+    ...reserved.map((key) => `- ${GROUP_LABELS[key]}: ${(parts[key] ?? []).join(", ")}`),
+    "다섯 갈래를 모두 곱하면 0건이 되는 일이 잦아, 처음에는 대상과 해결 수단만 넣습니다.",
+    "결과가 너무 많으면 학생에게 우측 패널에서 갈래를 하나 더 켜 보자고 안내하세요.",
+  ].join("\n");
 }
 
 function summarizeInvention(row: InventionRow, grades: LookupItem[]): string {
@@ -387,7 +421,11 @@ export async function executeTool(
         method: asStringArray(args.method),
         effect: asStringArray(args.effect),
       };
-      const built = buildKiprisQuery(parts);
+
+      // 1.0과 같은 기준 — 처음에는 대상·해결수단만 넣는다.
+      // 다섯 갈래를 다 곱하면 0건이 되는 일이 잦다 (formula.ts 의 DEFAULT_GROUPS).
+      const activeGroups = filledGroups(parts, DEFAULT_GROUPS);
+      const built = buildKiprisQuery(pickGroups(parts, activeGroups));
 
       if (!built.query) {
         return keep(
@@ -398,17 +436,26 @@ export async function executeTool(
       }
 
       // 검색식만 만든 단계 — 아직 조회 전이라 건수는 알 수 없다.
-      // 낱말(parts)도 함께 실어야 학생이 패널에서 갈래별로 고쳐 볼 수 있다.
+      // 꺼 둔 갈래의 낱말까지 실어야 학생이 패널에서 하나씩 켜 볼 수 있다.
       const nextSnapshot: PatentSnapshot = {
         query: built.query,
         totalCount: -1,
         loadedCount: 0,
         parts,
+        activeGroups,
       };
       const next: SessionState = { ...session, patent: nextSnapshot };
 
+      const reserved = describeReserved(parts, activeGroups);
+
       return {
-        result: `${describeFormula(built)}\n\n이 검색식으로 조회하려면 search_kipris를 호출하세요.`,
+        result: [
+          describeFormula(built),
+          reserved,
+          "이 검색식으로 조회하려면 search_kipris를 호출하세요.",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         session: next,
         events: [{ type: "state", session: next }],
         isError: false,
@@ -448,6 +495,8 @@ export async function executeTool(
         loadedCount: found.patents.length,
         // 검색식이 그대로면 갈래 낱말도 그대로 — 학생 화면의 5칸이 비지 않도록
         parts: query === session.patent?.query ? session.patent.parts : undefined,
+        activeGroups:
+          query === session.patent?.query ? session.patent.activeGroups : undefined,
         page: found.page,
       };
       const next: SessionState = { ...session, patent: nextSnapshot };

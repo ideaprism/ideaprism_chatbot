@@ -34,10 +34,16 @@ export interface PatentSnapshot {
   totalCount: number;
   loadedCount: number;
   /**
-   * 검색식을 만든 재료. 특허 패널의 OPSME 5칸을 이 값으로 채운다 —
-   * 검색식 문자열만 들고 있으면 학생이 "대상"과 "문제"를 따로 고칠 수가 없다.
+   * 검색식을 만든 재료 — 꺼 둔 갈래의 낱말까지 모두. 특허 패널의 OPSME 5칸을
+   * 이 값으로 채운다. 검색식 문자열만 들고 있으면 학생이 "대상"과 "문제"를
+   * 따로 고칠 수가 없다.
    */
   parts?: QueryParts;
+  /**
+   * 그중 실제로 검색식에 들어간 갈래. 나머지 낱말은 화면에 남아 있되 꺼져 있다 —
+   * 다섯을 다 곱하면 0건이 되는 일이 잦아서다 (formula.ts 의 DEFAULT_GROUPS).
+   */
+  activeGroups?: string[];
   /** 지금 보고 있는 쪽 번호 (1부터) */
   page?: number;
 }

@@ -9,6 +9,43 @@
 
 import type { QueryParts } from "@/types/kipris";
 
+/** 검색식에 들어갈 수 있는 갈래 (IPC는 갈래가 아니라 늘 앞에 붙는다) */
+export type GroupKey = "object" | "problem" | "solution" | "method" | "effect";
+
+export const GROUP_KEYS: readonly GroupKey[] = [
+  "object",
+  "problem",
+  "solution",
+  "method",
+  "effect",
+];
+
+/**
+ * 처음 검색식에 넣는 갈래 — 1.0과 같이 발명 대상과 해결 수단만.
+ *
+ * 갈래끼리는 *(그리고)로 이어지므로 다섯을 다 넣으면 조건이 겹쳐 0건이 되는 일이 잦다.
+ * 넓게 시작해서 결과가 너무 많으면 갈래를 하나씩 켜는 쪽이, 0건에서 하나씩 빼는 쪽보다
+ * 학생이 훨씬 다루기 쉽다. 나머지 낱말은 버리지 않고 화면의 5칸에 남아 있는다.
+ */
+export const DEFAULT_GROUPS: readonly GroupKey[] = ["object", "solution"];
+
+/** 고른 갈래의 낱말만 남긴다 (IPC는 그대로 따라간다) */
+export function pickGroups(parts: QueryParts, groups: readonly GroupKey[]): QueryParts {
+  const picked: QueryParts = { object: [], ipc: parts.ipc };
+  for (const key of GROUP_KEYS) {
+    if (groups.includes(key)) picked[key] = parts[key] ?? [];
+  }
+  return picked;
+}
+
+/** 낱말이 실제로 들어 있는 갈래만 (빈 갈래를 켜 두면 학생이 헷갈린다) */
+export function filledGroups(
+  parts: QueryParts,
+  groups: readonly GroupKey[],
+): GroupKey[] {
+  return groups.filter((key) => (parts[key]?.length ?? 0) > 0);
+}
+
 /** KIPRIS 검색식에서 뜻이 있는 기호는 낱말에 그대로 두면 식이 깨진다 */
 function cleanTerm(term: string): string {
   return term

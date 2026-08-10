@@ -8,7 +8,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildKiprisQuery, describeFormula } from "../src/lib/kipris/formula";
+import {
+  buildKiprisQuery,
+  DEFAULT_GROUPS,
+  describeFormula,
+  filledGroups,
+  pickGroups,
+} from "../src/lib/kipris/formula";
 
 test("갈래 안은 +(또는), 갈래끼리는 *(그리고)", () => {
   const { query } = buildKiprisQuery({
@@ -67,6 +73,45 @@ test("갈래가 4개 이상이면 0건일 수 있다고 알려 준다", () => {
     effect: ["건조"],
   });
   assert.ok(result.advice?.includes("0건"), result.advice ?? "");
+});
+
+// ── 처음 넣는 갈래 (1.0과 같은 기준) ──────────────────────────
+//
+// 갈래끼리는 *(그리고)로 이어지므로 다섯을 다 넣으면 0건이 되는 일이 잦다.
+// 그래서 처음에는 대상·해결수단만 넣고, 나머지 낱말은 화면에 남겨 둔다.
+
+test("처음 넣는 갈래는 대상과 해결 수단 둘뿐이다", () => {
+  assert.deepEqual([...DEFAULT_GROUPS], ["object", "solution"]);
+});
+
+test("다섯 갈래를 다 골라도 검색식은 대상*해결수단 으로만 만든다", () => {
+  const parts = {
+    object: ["우산"],
+    problem: ["빗물"],
+    solution: ["받이"],
+    method: ["접이식"],
+    effect: ["건조"],
+  };
+  const { query } = buildKiprisQuery(pickGroups(parts, DEFAULT_GROUPS));
+  assert.equal(query, "우산*받이");
+});
+
+test("IPC는 갈래가 아니라 늘 따라붙는다", () => {
+  const { query } = buildKiprisQuery(
+    pickGroups({ object: ["우산"], problem: ["빗물"], ipc: "A45B" }, DEFAULT_GROUPS),
+  );
+  assert.equal(query, "IPC=[A45B]*우산");
+});
+
+test("꺼 둔 갈래의 낱말은 버리지 않는다 (화면에서 켤 수 있어야 한다)", () => {
+  const parts = { object: ["우산"], problem: ["빗물"], solution: ["받이"] };
+  const widened = buildKiprisQuery(pickGroups(parts, ["object", "problem", "solution"]));
+  assert.equal(widened.query, "우산*빗물*받이");
+});
+
+test("낱말이 빈 갈래는 켜진 것으로 세지 않는다", () => {
+  const parts = { object: ["우산"], solution: [] };
+  assert.deepEqual(filledGroups(parts, DEFAULT_GROUPS), ["object"]);
 });
 
 test("설명에 검색식과 구성이 함께 들어간다", () => {

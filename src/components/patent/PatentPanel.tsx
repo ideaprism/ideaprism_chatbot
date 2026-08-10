@@ -4,7 +4,12 @@ import { Check, Copy, Loader2, Search, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PatentCard } from "./PatentCard";
-import { buildKiprisQuery } from "@/lib/kipris/formula";
+import {
+  buildKiprisQuery,
+  DEFAULT_GROUPS,
+  pickGroups,
+  type GroupKey,
+} from "@/lib/kipris/formula";
 import { cn } from "@/lib/utils";
 import type { Patent, PatentSnapshot, QueryParts } from "@/types/kipris";
 
@@ -112,35 +117,31 @@ function fieldsFrom(parts: QueryParts | null | undefined): TemplateFields {
   };
 }
 
-/**
- * 1.0의 기본값 — 대상(O)과 해결수단(S)만 켠다.
- * 다섯 갈래를 모두 켜면 조건이 너무 많이 겹쳐 결과가 몇 건으로 줄어든다.
- */
-const DEFAULT_ACTIVE: Record<CategoryKey, boolean> = {
-  O: true,
-  P: false,
-  S: true,
-  M: false,
-  E: false,
+const GROUP_OF: Record<CategoryKey, GroupKey> = {
+  O: "object",
+  P: "problem",
+  S: "solution",
+  M: "method",
+  E: "effect",
 };
 
 /**
- * AI가 5단계에서 직접 고른 갈래는 그대로 켠다.
- *
- * 1.0의 자료는 다섯 갈래가 미리 다 채워져 있어 "무엇을 쓸지"를 화면이 골라야 하지만,
- * 여기서는 AI가 이미 골라서 넘긴 것이라 임의로 꺼 버리면 AI가 학생에게 말한 검색식과
- * 화면의 검색식이 달라진다.
+ * 처음 켜 둘 갈래 — 검색식 규칙(formula.ts 의 DEFAULT_GROUPS)과 같은 기준을 화면에도 쓴다.
+ * 1.0과 같이 대상(O)·해결수단(S)만 켜진다. 다섯을 다 켜면 0건이 되는 일이 잦다.
  */
-function activeFrom(fields: TemplateFields): Record<CategoryKey, boolean> {
-  const filled = (value: string) => value.trim().length > 0;
-  const active = {
-    O: filled(fields.object),
-    P: filled(fields.problem),
-    S: filled(fields.solution),
-    M: filled(fields.method),
-    E: filled(fields.effect),
-  };
-  return Object.values(active).some(Boolean) ? active : DEFAULT_ACTIVE;
+const DEFAULT_ACTIVE = Object.fromEntries(
+  (Object.keys(GROUP_OF) as CategoryKey[]).map((key) => [
+    key,
+    DEFAULT_GROUPS.includes(GROUP_OF[key]),
+  ]),
+) as Record<CategoryKey, boolean>;
+
+/** 세션에 남아 있던 "켜 둔 갈래"를 화면 상태로 되돌린다 (없으면 기본값) */
+function activeFromGroups(groups: string[] | undefined): Record<CategoryKey, boolean> {
+  if (!groups?.length) return DEFAULT_ACTIVE;
+  return Object.fromEntries(
+    (Object.keys(GROUP_OF) as CategoryKey[]).map((key) => [key, groups.includes(GROUP_OF[key])]),
+  ) as Record<CategoryKey, boolean>;
 }
 
 function splitKeywords(value: string): string[] {
@@ -150,23 +151,27 @@ function splitKeywords(value: string): string[] {
     .filter(Boolean);
 }
 
-/** 5칸 + 켜진 갈래 → 검색식 재료. 꺼 둔 갈래는 빠진다. */
-function partsOf(
-  fields: TemplateFields,
-  active: Record<CategoryKey, boolean>,
-): QueryParts {
+/** 5칸에 적힌 낱말 전부 — 꺼 둔 갈래의 낱말도 버리지 않는다 */
+function partsOf(fields: TemplateFields): QueryParts {
   return {
-    object: active.O ? splitKeywords(fields.object) : [],
-    problem: active.P ? splitKeywords(fields.problem) : [],
-    solution: active.S ? splitKeywords(fields.solution) : [],
-    method: active.M ? splitKeywords(fields.method) : [],
-    effect: active.E ? splitKeywords(fields.effect) : [],
+    object: splitKeywords(fields.object),
+    problem: splitKeywords(fields.problem),
+    solution: splitKeywords(fields.solution),
+    method: splitKeywords(fields.method),
+    effect: splitKeywords(fields.effect),
     ipc: fields.ipc.trim() || undefined,
   };
 }
 
+/** 켜 둔 갈래 목록 (세션에 실어 다음 턴에도 같은 화면이 되게 한다) */
+function groupsOf(active: Record<CategoryKey, boolean>): GroupKey[] {
+  return (Object.keys(GROUP_OF) as CategoryKey[])
+    .filter((key) => active[key])
+    .map((key) => GROUP_OF[key]);
+}
+
 function formulaOf(fields: TemplateFields, active: Record<CategoryKey, boolean>): string {
-  return buildKiprisQuery(partsOf(fields, active)).query;
+  return buildKiprisQuery(pickGroups(partsOf(fields), groupsOf(active))).query;
 }
 
 /**
@@ -194,6 +199,7 @@ export function PatentPanel({
     totalCount: number,
     page: number,
     parts: QueryParts,
+    activeGroups: GroupKey[],
   ) => void;
 }) {
   // ── 검색식 재료 ────────────────────────────────────────────
@@ -204,7 +210,7 @@ export function PatentPanel({
 
   const [fields, setFields] = useState<TemplateFields>(initial);
   const [active, setActive] = useState<Record<CategoryKey, boolean>>(() =>
-    seed ? DEFAULT_ACTIVE : activeFrom(initial),
+    seed ? DEFAULT_ACTIVE : activeFromGroups(snapshot?.activeGroups),
   );
 
   /** 1.0 자료에 정리돼 있는 두 벌(쉬운 쪽/자세한 쪽) — 선배 발명에서 넘어왔을 때만 생긴다 */
@@ -216,7 +222,9 @@ export function PatentPanel({
   const [ipcDescription, setIpcDescription] = useState<string | null>(null);
 
   // ── 조회 상태 ──────────────────────────────────────────────
-  const [query, setQuery] = useState(() => snapshot?.query ?? formulaOf(initial, activeFrom(initial)));
+  const [query, setQuery] = useState(
+    () => snapshot?.query ?? formulaOf(initial, activeFromGroups(snapshot?.activeGroups)),
+  );
   const [results, setResults] = useState<Patent[]>(patents);
   const [totalCount, setTotalCount] = useState(snapshot?.totalCount ?? -1);
   const [page, setPage] = useState(snapshot?.page ?? 1);
@@ -226,12 +234,13 @@ export function PatentPanel({
   const [showTip, setShowTip] = useState(false);
 
   const totalPages = totalCount > 0 ? Math.ceil(totalCount / PAGE_SIZE) : 0;
-  const parts = useMemo(() => partsOf(fields, active), [fields, active]);
+  const parts = useMemo(() => partsOf(fields), [fields]);
+  const groups = useMemo(() => groupsOf(active), [active]);
 
   /** 조회 한 번. 검색식을 인자로 받는 것은, 낱말을 고친 직후 화면 상태를 기다리지 않고 바로 찾기 위해서다. */
   const running = useRef(false);
   const search = useCallback(
-    async (text: string, wanted: number, used: QueryParts) => {
+    async (text: string, wanted: number, used: QueryParts, usedGroups: GroupKey[]) => {
       const formula = text.trim();
       if (!formula || running.current) return;
 
@@ -251,7 +260,14 @@ export function PatentPanel({
         setTotalCount(data.totalCount);
         setPage(data.page ?? wanted);
         // 바뀐 결과를 세션에 실어 둔다 — 다음 턴에 특허 탐정도 같은 화면을 본다
-        onResult(data.query, data.patents, data.totalCount, data.page ?? wanted, used);
+        onResult(
+          data.query,
+          data.patents,
+          data.totalCount,
+          data.page ?? wanted,
+          used,
+          usedGroups,
+        );
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "조회에 실패했습니다.");
         setResults([]);
@@ -322,7 +338,7 @@ export function PatentPanel({
       const formula = formulaOf(next, DEFAULT_ACTIVE);
       if (formula) {
         setQuery(formula);
-        void search(formula, 1, partsOf(next, DEFAULT_ACTIVE));
+        void search(formula, 1, partsOf(next), groupsOf(DEFAULT_ACTIVE));
       }
     })();
 
@@ -388,7 +404,7 @@ export function PatentPanel({
                   onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                      void search(query, 1, parts);
+                      void search(query, 1, parts, groups);
                     }
                   }}
                   placeholder="검색식 입력"
@@ -407,7 +423,7 @@ export function PatentPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => void search(query, 1, parts)}
+                  onClick={() => void search(query, 1, parts, groups)}
                   disabled={loading || !query.trim()}
                   className="flex shrink-0 items-center gap-1.5 rounded-lg bg-neutral-900 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-neutral-700 disabled:bg-neutral-300"
                 >
@@ -630,7 +646,7 @@ export function PatentPanel({
             <Pagination
               page={page}
               totalPages={totalPages}
-              onChange={(next) => void search(query, next, parts)}
+              onChange={(next) => void search(query, next, parts, groups)}
             />
           )}
         </div>

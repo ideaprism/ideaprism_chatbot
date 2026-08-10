@@ -9,7 +9,6 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 
 import { splitTags } from "@/lib/search/facets";
 import {
@@ -30,6 +29,10 @@ import type { InventionRow } from "@/types/search";
  *
  * 좌측 도면 45% + 우측 탭(기본 정보 / 상세 설명) 구조, 표 형식 메타, 태그 칩,
  * `//` 로 나뉜 접이식 섹션까지 1.0과 같다.
+ *
+ * 다만 1.0처럼 화면 전체를 덮지 않는다. 여기서는 왼쪽이 대화창이라, 모달이 화면을
+ * 덮으면 학생이 읽던 말풍선이 가려진다. 그래서 우측 패널 안에만 얹힌다
+ * (부모의 `relative` 상자 기준 `absolute inset-0`).
  *
  * 여는 열쇠는 세션의 `focusedId` 다. 학생이 카드를 눌러도, AI가 show_invention 으로
  * "이거 봐 봐" 해도 같은 모달이 열린다 (PRD S-4 양방향 동기화).
@@ -57,9 +60,6 @@ export function InventionDetailModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // 모달은 화면 맨 위에 얹혀야 해서 body에 직접 그린다 — 서버에서는 그릴 곳이 없다
-  if (typeof document === "undefined") return null;
-
   const title = row.simple_title || row.original_title || "(제목 없음)";
   const sdgNumber = row.sdg ? Number.parseInt(row.sdg, 10) : Number.NaN;
   const sdgUrl = Number.isNaN(sdgNumber) ? "" : sdgIconUrl(sdgNumber);
@@ -71,9 +71,9 @@ export function InventionDetailModal({
     row.invention_motive || row.detailed_summary || row.problem || row.solution || row.next_step,
   );
 
-  return createPortal(
+  return (
     <div
-      className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="no-print absolute inset-0 z-30 flex items-stretch justify-center bg-black/40 p-3 backdrop-blur-sm"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -82,7 +82,7 @@ export function InventionDetailModal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="@container flex h-full w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
       >
         {/* 머리말 */}
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-4">
@@ -97,9 +97,10 @@ export function InventionDetailModal({
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        {/* 좁은 패널에서는 도면을 위로 올려 쌓는다 — 폭 기준은 화면이 아니라 이 상자다 */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden @3xl:flex-row">
           {/* 왼쪽: 도면 */}
-          <div className="flex shrink-0 items-center justify-center border-b border-line bg-neutral-50 p-6 lg:w-[45%] lg:border-b-0 lg:border-r lg:p-8">
+          <div className="flex shrink-0 items-center justify-center border-b border-line bg-neutral-50 p-5 @3xl:w-[45%] @3xl:border-b-0 @3xl:border-r @3xl:p-8">
             <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-line bg-white">
               {row.drawing_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -231,8 +232,7 @@ export function InventionDetailModal({
           </div>
         </div>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
 

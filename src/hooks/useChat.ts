@@ -359,13 +359,20 @@ export function useChat() {
    * 다음 턴에 특허 탐정도 같은 화면을 보게 된다.
    */
   const applyPatentResult = useCallback(
-    (query: string, list: Patent[], totalCount: number, page: number, parts: QueryParts) => {
+    (
+      query: string,
+      list: Patent[],
+      totalCount: number,
+      page: number,
+      parts: QueryParts,
+      activeGroups: string[],
+    ) => {
       setPatents(list);
       const current = sessionRef.current;
       if (!current) return;
       syncSession({
         ...current,
-        patent: { query, totalCount, loadedCount: list.length, parts, page },
+        patent: { query, totalCount, loadedCount: list.length, parts, activeGroups, page },
       });
     },
     [syncSession],
