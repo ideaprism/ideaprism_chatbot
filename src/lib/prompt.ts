@@ -16,8 +16,24 @@ import { STAGES, type QuestState } from "./quest";
 import type { PatentSnapshot } from "@/types/kipris";
 import type { SearchSnapshot } from "@/types/search";
 
-/** 캐릭터와 무관하게 항상 지켜야 하는 2.0 운영 규칙 */
-function operatingRules(characterId: CharacterId): string {
+/**
+ * {{이름}} 자리표시자를 실제 값으로 바꾼다.
+ * 값이 없는 자리표시자는 그대로 둔다 — 대표님이 오타를 내도 문장이 사라지지 않도록.
+ */
+export function fillPlaceholders(
+  template: string,
+  values: Record<string, string>,
+): string {
+  return template.replace(/\{\{\s*([^}\s]+)\s*\}\}/g, (whole, key: string) =>
+    key in values ? values[key] : whole,
+  );
+}
+
+/**
+ * flow/공통규칙.md 가 없을 때 쓰는 기본 운영 규칙.
+ * 파일을 지우거나 잘못 고쳐도 서비스가 멈추지 않게 하는 안전망이다.
+ */
+function defaultOperatingRules(characterId: CharacterId): string {
   const character = getCharacter(characterId);
   const emotions = emotionNames(characterId).join(", ");
 
@@ -64,8 +80,19 @@ function operatingRules(characterId: CharacterId): string {
 export function buildSystemPrompt(
   characterId: CharacterId,
   personaText: string,
+  /** flow/공통규칙.md 원문. 없으면 코드에 든 기본 규칙을 쓴다 */
+  rulesTemplate?: string | null,
 ): string[] {
-  return [operatingRules(characterId), `# 캐릭터 대본\n\n${personaText}`];
+  const character = getCharacter(characterId);
+  const rules = rulesTemplate
+    ? fillPlaceholders(rulesTemplate, {
+        캐릭터이름: character.name,
+        감정목록: emotionNames(characterId).join(", "),
+        기본감정: character.defaultEmotion,
+      })
+    : defaultOperatingRules(characterId);
+
+  return [rules, `# 캐릭터 대본\n\n${personaText}`];
 }
 
 export interface TurnContext {
@@ -79,6 +106,8 @@ export interface TurnContext {
   search: SearchSnapshot | null;
   /** 특허 패널에 지금 떠 있는 검색식·결과 */
   patent: PatentSnapshot | null;
+  /** flow/N-단계이름.md 의 "이번 단계에서 할 일". 없으면 quest.ts 의 기본 문구 */
+  mission?: string;
 }
 
 /**
@@ -94,7 +123,7 @@ export function buildTurnBriefing(ctx: TurnContext): string {
   lines.push(`완료 조건: ${stage.doneWhen}`);
   lines.push("");
   lines.push("이번 단계에서 할 일:");
-  lines.push(stage.mission);
+  lines.push(ctx.mission ?? stage.mission);
 
   if (ctx.nickname) {
     lines.push("");
@@ -223,18 +252,10 @@ export function openingTurn(ctx: TurnContext): AiMessage {
  * 배턴터치 직후: 앞 캐릭터가 소개하고 물러난 자리에 새 캐릭터가 등장한다.
  * 학생이 아직 아무 말도 하지 않은 상태이므로 등장 인사부터 시작해야 한다.
  */
-export function handoffTurn(
-  ctx: TurnContext,
-  from: CharacterId | null,
-): AiMessage {
-  const who = from ? getCharacter(from).name : "앞 캐릭터";
+export function handoffTurn(ctx: TurnContext, entranceCue: string): AiMessage {
   return {
     role: "user",
-    content:
-      `(${who}가 너를 소개하고 물러났다. 학생은 아직 아무 말도 하지 않았다. ` +
-      "짧게 등장 인사를 건네고, 이번 단계에서 할 일을 자연스럽게 꺼내라. " +
-      "앞 캐릭터가 이미 한 이야기를 되풀이하지 말 것.)\n\n" +
-      buildTurnBriefing(ctx),
+    content: `${entranceCue}\n\n${buildTurnBriefing(ctx)}`,
   };
 }
 

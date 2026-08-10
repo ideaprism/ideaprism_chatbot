@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { availableProviders } from "@/lib/ai/provider";
 import { CHARACTERS } from "@/lib/characters";
+import { flowStatus } from "@/lib/flow";
 import { loadPersona } from "@/lib/personas";
 import { supabaseRead } from "@/lib/supabase";
 
@@ -68,6 +69,17 @@ export async function GET() {
     detail: personaResults.map((r) => r.line).join(", "),
   };
 
+  // 흐름 지침 파일 — 없으면 코드에 든 기본 문구로 도는 것이지 고장은 아니다
+  const flow = await flowStatus();
+  const missingFlow = flow.filter((file) => !file.loaded).map((file) => file.name);
+  checks.flow = {
+    ok: missingFlow.length === 0,
+    detail:
+      missingFlow.length === 0
+        ? `flow/ 파일 ${flow.length}개 모두 읽힘 — 여기를 고치면 대화 흐름이 바뀝니다`
+        : `기본 문구로 대체 중: ${missingFlow.join(", ")} (파일이 없거나 비어 있음)`,
+  };
+
   // Supabase 읽기 연결 — 1.0의 inventions 테이블에 실제로 닿는지
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     checks.supabaseRead = {
@@ -94,7 +106,7 @@ export async function GET() {
     ? { ok: true, detail: "설정됨 — 발명노트가 저장됩니다 (서버 전용 키)" }
     : { ok: false, detail: "없음 — 노트가 브라우저에만 남고 저장되지 않습니다" };
 
-  // 이것만 있으면 대화는 시작된다
+  // 이것만 있으면 대화는 시작된다 (flow 파일은 없어도 기본 문구로 돈다)
   const canChat = checks.aiProviders.ok && checks.personas.ok;
   const allReady = Object.values(checks).every((check) => check.ok);
 

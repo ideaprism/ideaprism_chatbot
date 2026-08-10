@@ -14,9 +14,11 @@ import { test } from "node:test";
 
 import { advanceStage, initialQuestState, STAGES } from "../src/lib/quest";
 import {
+  buildSystemPrompt,
   COMPACTED_MARKER,
   compactHistory,
   createEmotionParser,
+  fillPlaceholders,
   normalizeHistory,
   SESSION_OPENING_CUE,
 } from "../src/lib/prompt";
@@ -264,7 +266,38 @@ test("단계마다 따로 쌓이고 합계도 낼 수 있다", () => {
   });
 });
 
-// ── 5. 대화 이력 정규화 ──────────────────────────────────────
+// ── 5. 흐름 지침 자리표시자 ──────────────────────────────────
+
+test("자리표시자를 실제 값으로 바꾼다", () => {
+  const filled = fillPlaceholders(
+    "너는 {{캐릭터이름}}이다. 고를 수 있는 감정: {{감정목록}}",
+    { 캐릭터이름: "지유 선배", 감정목록: "confident, playful" },
+  );
+  assert.equal(filled, "너는 지유 선배이다. 고를 수 있는 감정: confident, playful");
+});
+
+test("공백이 섞인 자리표시자도 알아본다", () => {
+  assert.equal(fillPlaceholders("{{ 이름 }}!", { 이름: "민준" }), "민준!");
+});
+
+test("모르는 자리표시자는 지우지 않고 그대로 둔다", () => {
+  // 대표님이 오타를 내도 문장이 통째로 사라지지 않게 하기 위한 규칙
+  const filled = fillPlaceholders("{{캐릭터이름}} / {{오타난이름}}", {
+    캐릭터이름: "지유 선배",
+  });
+  assert.equal(filled, "지유 선배 / {{오타난이름}}");
+});
+
+test("flow 규칙이 있으면 그것을 쓰고, 없으면 기본 규칙으로 돌아간다", () => {
+  const withFile = buildSystemPrompt("jiyou", "대본", "규칙: {{캐릭터이름}} 전용");
+  assert.equal(withFile[0], "규칙: 지유 선배 전용");
+  assert.ok(withFile[1].includes("대본"));
+
+  const withoutFile = buildSystemPrompt("jiyou", "대본", null);
+  assert.ok(withoutFile[0].includes("IdeaPrism 운영 규칙"), "기본 규칙으로 되돌아간다");
+});
+
+// ── 6. 대화 이력 정규화 ──────────────────────────────────────
 
 test("이력이 assistant로 시작하면 시동 문구를 앞에 복원한다", () => {
   // 첫 인사는 학생 발화 없이 시작하므로 이런 이력이 실제로 만들어진다

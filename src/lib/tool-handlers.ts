@@ -11,6 +11,7 @@
 
 import "server-only";
 
+import { handoffExitText, stageMission } from "./flow";
 import { buildKiprisQuery, describeFormula } from "./kipris/formula";
 import { KiprisError, searchKipris } from "./kipris/service";
 import { advanceStage, STAGES, STAGE_IDS, type StageId } from "./quest";
@@ -510,17 +511,27 @@ export async function executeTool(
       const next: SessionState = { ...session, quest: outcome.state, nickname };
       const events: ChatEvent[] = [];
 
+      // 승급 후 AI에게 줄 안내는 flow/*.md 에서 가져온다 (대표님이 고치는 파일).
+      // 담당이 바뀌면 "퇴장 인사" 지침을, 그대로면 다음 단계에서 할 일을 준다.
+      let guidance = outcome.message;
       if (outcome.characterChanged) {
+        guidance = await handoffExitText(from, outcome.nextCharacter, outcome.nextStage);
         events.push({
           type: "handoff",
           from,
           to: outcome.nextCharacter,
           stage: outcome.nextStage,
         });
+      } else if (stage !== outcome.nextStage) {
+        guidance =
+          `${stage}단계 완료! 이어서 ${outcome.nextStage}단계 ` +
+          `「${STAGES[outcome.nextStage].label}」을 진행하세요.\n\n` +
+          (await stageMission(outcome.nextStage));
       }
+
       events.push({ type: "state", session: next });
 
-      return { result: outcome.message, session: next, events, isError: false };
+      return { result: guidance, session: next, events, isError: false };
     }
 
     default:

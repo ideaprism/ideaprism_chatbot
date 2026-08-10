@@ -9,6 +9,7 @@ import {
 import { resolveProvider } from "@/lib/ai/provider";
 import { AiError, type AiMessage, type AiToolResult } from "@/lib/ai/types";
 import { normalizeEmotion } from "@/lib/characters";
+import { handoffEnterText, operatingRulesTemplate, stageMission } from "@/lib/flow";
 import { saveNote } from "@/lib/notes/repository";
 import { loadPersona } from "@/lib/personas";
 import {
@@ -92,6 +93,13 @@ export async function POST(request: Request) {
     return fail(`페르소나 파일을 읽지 못했습니다 (${characterId}).`, 500);
   }
 
+  // 대화 흐름 지침은 flow/*.md 에서 읽는다 (대표님이 직접 고치는 파일).
+  // 파일이 없거나 잘못돼도 코드에 든 기본 문구로 조용히 되돌아간다.
+  const [rulesTemplate, mission] = await Promise.all([
+    operatingRulesTemplate(),
+    stageMission(session.quest.currentStage),
+  ]);
+
   const ctx: TurnContext = {
     quest: session.quest,
     nickname: session.nickname,
@@ -99,6 +107,7 @@ export async function POST(request: Request) {
     noteDigest: noteDigest(session.notes),
     search: session.search,
     patent: session.patent,
+    mission,
   };
 
   // 이번 턴 대본에 "발명 이야기로 되돌리기" 안내가 들어갔는가.
@@ -120,7 +129,14 @@ export async function POST(request: Request) {
 
   const opener =
     body.intent === "handoff"
-      ? handoffTurn(ctx, body.handoffFrom ?? null)
+      ? handoffTurn(
+          ctx,
+          await handoffEnterText(
+            body.handoffFrom ?? null,
+            characterId,
+            session.quest.currentStage,
+          ),
+        )
       : openingTurn(ctx);
 
   const messages: AiMessage[] = [
@@ -130,7 +146,7 @@ export async function POST(request: Request) {
       : opener,
   ];
 
-  const system = buildSystemPrompt(characterId, persona);
+  const system = buildSystemPrompt(characterId, persona, rulesTemplate);
   const tools = toolsForStage(session.quest.currentStage);
 
   const encoder = new TextEncoder();
