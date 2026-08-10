@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { advanceStage, initialQuestState, STAGES } from "../src/lib/quest";
-import { createEmotionParser } from "../src/lib/prompt";
+import { createEmotionParser, normalizeHistory, SESSION_OPENING_CUE } from "../src/lib/prompt";
 import { normalizeEmotion } from "../src/lib/characters";
 import { sanitizePersona } from "../src/lib/personas";
 
@@ -145,7 +145,33 @@ test("알 수 없는 감정 이름은 기본값으로 교정된다", () => {
   assert.equal(normalizeEmotion("teacher", null), "welcome");
 });
 
-// ── 3. 페르소나 정제 ─────────────────────────────────────────
+// ── 3. 대화 이력 정규화 ──────────────────────────────────────
+
+test("이력이 assistant로 시작하면 시동 문구를 앞에 복원한다", () => {
+  // 첫 인사는 학생 발화 없이 시작하므로 이런 이력이 실제로 만들어진다
+  const history = normalizeHistory([
+    { role: "assistant", content: "안녕! 반가워." },
+    { role: "user", content: "안녕하세요" },
+  ]);
+
+  assert.equal(history.length, 3);
+  assert.equal(history[0].role, "user", "Messages API는 첫 메시지가 user여야 한다");
+  assert.equal(history[0].content, SESSION_OPENING_CUE);
+});
+
+test("이력이 user로 시작하면 그대로 둔다", () => {
+  const original = [
+    { role: "user" as const, content: "안녕하세요" },
+    { role: "assistant" as const, content: "반가워!" },
+  ];
+  assert.deepEqual(normalizeHistory(original), original);
+});
+
+test("빈 이력은 그대로 둔다 (첫 요청)", () => {
+  assert.deepEqual(normalizeHistory([]), []);
+});
+
+// ── 4. 페르소나 정제 ─────────────────────────────────────────
 
 test("페르소나에서 이미지 지시문과 감정 이미지 목록을 걷어낸다", () => {
   const raw = [

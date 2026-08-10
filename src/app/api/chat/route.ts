@@ -13,6 +13,7 @@ import { loadPersona } from "@/lib/personas";
 import {
   buildSystemBlocks,
   createEmotionParser,
+  normalizeHistory,
   openingTurn,
   userTurnWithBriefing,
   type TurnContext,
@@ -85,10 +86,14 @@ export async function POST(request: Request) {
     noteDigest: noteDigest(session.notes),
   };
 
-  const history: Anthropic.MessageParam[] = (body.history ?? [])
-    .slice(-MAX_HISTORY_TURNS)
-    .filter((turn) => turn.text.trim().length > 0)
-    .map((turn) => ({ role: turn.role, content: turn.text }));
+  // 첫 인사는 학생 발화 없이 캐릭터가 먼저 말을 걸기 때문에, 이력이 assistant로
+  // 시작할 수 있다. Messages API는 첫 메시지가 user여야 하므로 시동 문구를 복원한다.
+  const history = normalizeHistory(
+    (body.history ?? [])
+      .slice(-MAX_HISTORY_TURNS)
+      .filter((turn) => turn.text.trim().length > 0)
+      .map((turn) => ({ role: turn.role, content: turn.text })),
+  );
 
   const messages: Anthropic.MessageParam[] = [
     ...history,

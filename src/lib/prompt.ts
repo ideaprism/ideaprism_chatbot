@@ -137,15 +137,32 @@ export function userTurnWithBriefing(
   };
 }
 
+/**
+ * 세션 시동 문구.
+ * 첫 인사는 학생 발화 없이 캐릭터가 먼저 말을 걸기 때문에, 이후 턴에서 대화 이력을
+ * 되돌려 보낼 때도 이 문구를 첫 user 메시지로 복원해야 흐름이 맞는다.
+ * (Messages API는 첫 메시지가 user여야 한다)
+ */
+export const SESSION_OPENING_CUE =
+  "(학생이 방금 접속했다. 아직 아무 말도 하지 않았다. 먼저 인사를 건네고 대화를 시작하라.)";
+
 /** 세션 첫 화면: 학생 입력 없이 캐릭터가 먼저 말을 걸도록 하는 시동 메시지 */
 export function openingTurn(ctx: TurnContext): Anthropic.MessageParam {
   return {
     role: "user",
-    content:
-      "(학생이 방금 접속했다. 아직 아무 말도 하지 않았다. " +
-      "먼저 인사를 건네고 대화를 시작하라.)\n\n" +
-      buildTurnBriefing(ctx),
+    content: `${SESSION_OPENING_CUE}\n\n${buildTurnBriefing(ctx)}`,
   };
+}
+
+/**
+ * 대화 이력을 Messages API가 받아들이는 형태로 맞춘다.
+ * 첫 인사 때문에 이력이 assistant로 시작할 수 있는데, 그대로 보내면 400이 난다.
+ */
+export function normalizeHistory(
+  history: Anthropic.MessageParam[],
+): Anthropic.MessageParam[] {
+  if (history[0]?.role !== "assistant") return history;
+  return [{ role: "user", content: SESSION_OPENING_CUE }, ...history];
 }
 
 const EMOTION_TAG = /\[\s*감정\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*\]/;
