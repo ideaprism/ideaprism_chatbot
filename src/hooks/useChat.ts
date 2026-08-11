@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getCharacter, normalizeEmotion, type CharacterId } from "@/lib/characters";
+import type { EmotionMark } from "@/lib/emotion";
 import { canRevisit, revisitStage, STAGES, type StageId } from "@/lib/quest";
 import { createSession } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
@@ -124,6 +125,7 @@ export function useChat() {
         role: "assistant",
         character,
         emotion: getCharacter(character).defaultEmotion,
+        emotionMarks: [],
         text: "",
         tools: [],
         pending: true,
@@ -161,6 +163,11 @@ export function useChat() {
         const decoder = new TextDecoder();
         let buffer = "";
         let text = "";
+        /**
+         * 감정이 바뀐 자리. 서버는 표식이 나온 순서 그대로 흘려보내므로,
+         * 감정 이벤트가 온 시점의 글자 수가 곧 "그 감정이 시작되는 자리"다.
+         */
+        let marks: EmotionMark[] = [];
         const tools: ToolName[] = [];
 
         for (;;) {
@@ -183,12 +190,12 @@ export function useChat() {
             }
 
             switch (event.type) {
-              case "emotion":
-                patch({
-                  emotion: normalizeEmotion(event.character, event.emotion),
-                  character: event.character,
-                });
+              case "emotion": {
+                const emotion = normalizeEmotion(event.character, event.emotion);
+                marks = [...marks, { at: text.length, emotion }];
+                patch({ emotion, emotionMarks: marks, character: event.character });
                 break;
+              }
               case "text":
                 text += event.delta;
                 patch({ text });

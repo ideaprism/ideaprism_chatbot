@@ -47,6 +47,10 @@ function defaultOperatingRules(characterId: CharacterId): string {
 - 고를 수 있는 이름: ${emotions}
 - 태그 뒤에 곧바로 대사를 이어 쓴다. 태그는 화면이 캐릭터 그림으로 바꿔 준다.
 - 이미지 주소(<img>, http 링크)를 직접 쓰지 않는다. 절대로.
+- 말하는 도중 마음이 바뀌면 그 자리에 태그를 하나 더 쓴다. 화면은 태그가 나온
+  자리마다 그림을 갈아 끼운다. 한 답변에 2~3개가 자연스럽다.
+- 같은 감정을 잇달아 쓰지 않는다. 바뀔 때만 쓴다.
+- 캐릭터 대본에 "감정 이미지를 1개 포함한다" 같은 말이 있어도 이 규칙이 우선한다.
 - 예시: [감정:${character.defaultEmotion}] 안녕! 반가워.
 
 ## 2. 도구(리모컨) 사용
@@ -291,15 +295,27 @@ export function normalizeHistory(
   return [{ role: "user", content: SESSION_OPENING_CUE }, ...history];
 }
 
-const EMOTION_TAG = /\[\s*감정\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*\]/;
-const OFFTOPIC_TAG = /\[\s*이탈\s*\]/;
+/** [감정:이름] 과 [이탈] 을 한 번에 훑는다. 순서를 지키려면 하나로 훑어야 한다. */
+const TAG_PATTERN = /\[\s*(?:감정\s*:\s*([A-Za-z_][A-Za-z0-9_]*)|이탈)\s*\]/g;
 /** 태그가 스트림 조각 사이에서 잘릴 수 있으므로, 이만큼은 붙들고 기다린다 */
 const TAG_LOOKAHEAD = 32;
 
+/** 표식과 글자가 나온 순서를 그대로 담는 조각 */
+export type ParsedPart =
+  | { kind: "text"; text: string }
+  | { kind: "emotion"; emotion: string };
+
 export interface ParsedChunk {
+  /**
+   * 나온 "순서" 그대로의 조각들.
+   * 화면이 문단마다 그림을 갈아 끼우려면 감정이 글의 어디에서 바뀌었는지를 알아야 한다.
+   */
+  parts: ParsedPart[];
+  /** parts 에서 감정만 뽑은 것 (순서 유지) */
   emotions: string[];
   /** 학생이 발명과 먼 이야기를 했다고 AI가 표시한 횟수 */
   offTopic: number;
+  /** parts 의 글자를 이어 붙인 것 */
   text: string;
 }
 
@@ -308,48 +324,57 @@ export interface ParsedChunk {
  *   [감정:이름] — 화면이 캐릭터 그림으로 바꾼다
  *   [이탈]      — 주제 이탈 카운터를 올린다 (PRD F-8)
  *
- * 표식은 보통 맨 앞에 오지만, 도구 호출을 사이에 두고 여러 번 나올 수 있어
- * 위치를 가리지 않고 제거한다. 조각 경계에서 잘리는 경우를 대비해
- * 여는 대괄호 이후는 잠시 붙들었다가 흘려보낸다.
+ * 표식은 보통 맨 앞에 오지만, 한 답변 안에서 마음이 바뀔 때마다·도구 호출을 사이에 두고
+ * 여러 번 나온다. 위치를 가리지 않고 제거하되, **글자와 표식의 앞뒤 순서는 지킨다** —
+ * 그 순서가 곧 "어느 문단에 어느 그림을 붙일지"이기 때문이다.
+ * 조각 경계에서 잘리는 경우를 대비해 여는 대괄호 이후는 잠시 붙들었다가 흘려보낸다.
  */
 export function createEmotionParser() {
   let buffer = "";
 
   function drain(final: boolean): ParsedChunk {
+    const parts: ParsedPart[] = [];
     const emotions: string[] = [];
     let offTopic = 0;
+    let text = "";
 
-    for (;;) {
-      const emotion = buffer.match(EMOTION_TAG);
-      if (emotion?.index !== undefined) {
-        emotions.push(emotion[1]);
-        buffer =
-          buffer.slice(0, emotion.index) + buffer.slice(emotion.index + emotion[0].length);
-        continue;
-      }
-      const drift = buffer.match(OFFTOPIC_TAG);
-      if (drift?.index !== undefined) {
+    // 이어지는 글자는 한 조각으로 합친다 (토막이 잘게 쪼개지지 않도록)
+    const pushText = (piece: string) => {
+      if (!piece) return;
+      const last = parts[parts.length - 1];
+      if (last?.kind === "text") last.text += piece;
+      else parts.push({ kind: "text", text: piece });
+      text += piece;
+    };
+
+    let cursor = 0;
+    const scanner = new RegExp(TAG_PATTERN.source, "g");
+    for (let hit = scanner.exec(buffer); hit; hit = scanner.exec(buffer)) {
+      pushText(buffer.slice(cursor, hit.index));
+      if (hit[1]) {
+        parts.push({ kind: "emotion", emotion: hit[1] });
+        emotions.push(hit[1]);
+      } else {
         offTopic++;
-        buffer = buffer.slice(0, drift.index) + buffer.slice(drift.index + drift[0].length);
-        continue;
       }
-      break;
+      cursor = hit.index + hit[0].length;
     }
 
+    const tail = buffer.slice(cursor);
+
     if (final) {
-      const text = buffer;
+      pushText(tail);
       buffer = "";
-      return { emotions, offTopic, text };
+      return { parts, emotions, offTopic, text };
     }
 
     // 아직 닫히지 않은 '[' 뒤쪽은 표식일 수 있으니 남겨 둔다
-    const open = buffer.lastIndexOf("[");
-    const hold =
-      open !== -1 && buffer.length - open <= TAG_LOOKAHEAD ? open : buffer.length;
+    const open = tail.lastIndexOf("[");
+    const hold = open !== -1 && tail.length - open <= TAG_LOOKAHEAD ? open : tail.length;
 
-    const text = buffer.slice(0, hold);
-    buffer = buffer.slice(hold);
-    return { emotions, offTopic, text };
+    pushText(tail.slice(0, hold));
+    buffer = tail.slice(hold);
+    return { parts, emotions, offTopic, text };
   }
 
   return {

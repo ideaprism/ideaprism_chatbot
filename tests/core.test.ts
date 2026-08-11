@@ -30,6 +30,7 @@ import {
 } from "../src/lib/prompt";
 import { mergeStageUsage, totalUsage } from "../src/lib/usage";
 import { normalizeEmotion } from "../src/lib/characters";
+import { splitByEmotion } from "../src/lib/emotion";
 import { sanitizePersona } from "../src/lib/personas";
 
 // ── 1. 단계 승급 검증 ────────────────────────────────────────
@@ -405,6 +406,91 @@ test("주제 이탈 표식은 화면에 새지 않고 횟수로만 센다", () =
 test("발명 이야기면 이탈로 세지 않는다", () => {
   const { offTopic } = feed(["[감정:coaching] 좋은 생각이야. 더 말해줄래?"]);
   assert.equal(offTopic, 0);
+});
+
+test("표식이 글 중간에 있으면 앞뒤 순서가 유지된다", () => {
+  const parser = createEmotionParser();
+  const first = parser.push("먼저 이 말. [감정:found] 그다음 이 말.");
+  const rest = parser.flush();
+  const parts = [...first.parts, ...rest.parts];
+
+  assert.deepEqual(
+    parts.map((part) => (part.kind === "emotion" ? `<${part.emotion}>` : part.text)),
+    ["먼저 이 말. ", "<found>", " 그다음 이 말."],
+  );
+});
+
+// ── 2-1. 한 답변 안에서 그림이 바뀐다 ────────────────────────
+//
+// 서버(route.ts)는 표식을 순서대로 흘려보내고, 브라우저(useChat.ts)는 감정이 온
+// 시점의 글자 수를 그 감정이 시작되는 자리로 적어 둔다. 아래 relay 는 그 두 곳을
+// 합쳐 흉내 낸 것이다 — 화면이 몇 토막으로 나뉘는지가 여기서 결정된다.
+
+function relay(chunks: string[]) {
+  const parser = createEmotionParser();
+  const marks: { at: number; emotion: string }[] = [];
+  let text = "";
+  let last: string | null = null;
+
+  const take = (parsed: ReturnType<typeof parser.flush>) => {
+    for (const part of parsed.parts) {
+      if (part.kind === "text") text += part.text;
+      else if (part.emotion !== last) {
+        last = part.emotion;
+        marks.push({ at: text.length, emotion: part.emotion });
+      }
+    }
+  };
+
+  for (const chunk of chunks) take(parser.push(chunk));
+  take(parser.flush());
+  return { text, marks };
+}
+
+test("한 답변 안에서 감정이 바뀌면 그 자리에서 토막 난다", () => {
+  const { text, marks } = relay([
+    "[감정:confident] 안녕! 나는 지유야.\n\n",
+    "[감정:realizing] 음… 그 문제 나도 겪어 봤어.\n\n",
+    "[감정:playful] 그럼 이렇게 해 볼까?",
+  ]);
+
+  const segments = splitByEmotion(text, marks, "confident");
+
+  assert.deepEqual(
+    segments.map((segment) => segment.emotion),
+    ["confident", "realizing", "playful"],
+  );
+  assert.equal(segments[0].text, "안녕! 나는 지유야.");
+  assert.equal(segments[1].text, "음… 그 문제 나도 겪어 봤어.");
+  assert.equal(segments[2].text, "그럼 이렇게 해 볼까?");
+});
+
+test("같은 감정이 잇달아 나오면 토막을 쪼개지 않는다", () => {
+  const { text, marks } = relay(["[감정:proud] 잘했어! ", "[감정:proud] 정말로!"]);
+
+  assert.equal(marks.length, 1);
+  assert.equal(splitByEmotion(text, marks, "proud").length, 1);
+});
+
+test("감정 태그가 없으면 그림 한 장으로 그린다", () => {
+  const { text, marks } = relay(["오늘은 무슨 얘기 할까?"]);
+
+  assert.deepEqual(splitByEmotion(text, marks, "welcome"), [
+    { emotion: "welcome", text: "오늘은 무슨 얘기 할까?" },
+  ]);
+});
+
+test("아직 한 글자도 안 나왔어도 그림 한 장은 남는다", () => {
+  assert.deepEqual(splitByEmotion("", [{ at: 0, emotion: "thinking" }], "welcome"), [
+    { emotion: "thinking", text: "" },
+  ]);
+});
+
+test("본문 길이를 벗어난 자리 표시는 버린다", () => {
+  // 저장된 대화를 되살릴 때 어긋난 값이 섞여 들어와도 화면이 깨지지 않아야 한다
+  const segments = splitByEmotion("짧은 말.", [{ at: 999, emotion: "oops" }], "analyzing");
+
+  assert.deepEqual(segments, [{ emotion: "analyzing", text: "짧은 말." }]);
 });
 
 // ── 3. 대화 압축 ─────────────────────────────────────────────

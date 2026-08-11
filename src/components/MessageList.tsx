@@ -4,9 +4,13 @@ import { useEffect, useRef } from "react";
 
 import { CharacterAvatar } from "./CharacterAvatar";
 import { getCharacter } from "@/lib/characters";
+import { splitByEmotion } from "@/lib/emotion";
 import type { ToolName } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/types/chat";
+
+/** 감정 그림 한 변의 길이(px). 원본이 정사각형이라 가로=세로다 */
+const AVATAR_SIZE = 200;
 
 const TOOL_LABEL: Record<ToolName, string> = {
   search_inventions: "선배 발명 찾아보는 중",
@@ -64,38 +68,59 @@ function CharacterBubble({ message }: { message: ChatMessage }) {
   const tools = message.tools ?? [];
   const empty = message.text.trim().length === 0;
 
+  // 감정이 바뀐 자리에서 글을 토막 내고, 토막마다 다른 그림을 붙인다.
+  // 감정이 한 번만 나왔으면 토막도 하나 — 지금까지와 똑같이 보인다.
+  const segments = splitByEmotion(message.text, message.emotionMarks, meta.defaultEmotion);
+
   return (
-    <div className="flex items-start gap-3">
-      <CharacterAvatar character={characterId} emotion={message.emotion} />
+    <div className="flex flex-col gap-2">
+      <p className={cn("text-xs font-semibold", meta.theme.accent)}>{meta.name}</p>
 
-      <div className="min-w-0 flex-1">
-        <p className={cn("mb-1 text-xs font-semibold", meta.theme.accent)}>{meta.name}</p>
+      {tools.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5">
+          {tools.map((tool) => (
+            <li
+              key={tool}
+              className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] text-neutral-500"
+            >
+              {TOOL_LABEL[tool] ?? tool}
+            </li>
+          ))}
+        </ul>
+      )}
 
-        {tools.length > 0 && (
-          <ul className="mb-2 flex flex-wrap gap-1.5">
-            {tools.map((tool) => (
-              <li
-                key={tool}
-                className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] text-neutral-500"
+      <div className="flex flex-col gap-3">
+        {segments.map((segment, index) => (
+          <div key={index} className="flex items-start gap-3">
+            <CharacterAvatar
+              character={characterId}
+              emotion={segment.emotion}
+              size={AVATAR_SIZE}
+            />
+
+            <div className="min-w-0 flex-1">
+              <div
+                className={cn(
+                  "inline-block max-w-full rounded-2xl rounded-tl-sm border px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap",
+                  meta.theme.bubble,
+                )}
               >
-                {TOOL_LABEL[tool] ?? tool}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div
-          className={cn(
-            "inline-block max-w-full rounded-2xl rounded-tl-sm border px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap",
-            meta.theme.bubble,
-          )}
-        >
-          {empty && message.pending ? (
-            <span className="text-neutral-400">생각하는 중…</span>
-          ) : (
-            <span className={cn(message.pending && "caret")}>{message.text}</span>
-          )}
-        </div>
+                {empty && message.pending ? (
+                  <span className="text-neutral-400">생각하는 중…</span>
+                ) : (
+                  <span
+                    className={cn(
+                      // 깜빡이는 커서는 지금 쓰이고 있는 마지막 토막에만
+                      message.pending && index === segments.length - 1 && "caret",
+                    )}
+                  >
+                    {segment.text}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

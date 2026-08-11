@@ -22,6 +22,7 @@ import {
   openingTurn,
   revisitTurn,
   userTurnWithBriefing,
+  type ParsedChunk,
   type TurnContext,
 } from "@/lib/prompt";
 import { STAGES } from "@/lib/quest";
@@ -157,7 +158,8 @@ export async function POST(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const emotionParser = createEmotionParser();
-      let emotionSent = false;
+      /** 방금 내보낸 감정. 같은 감정이 잇달아 나오면 화면을 쪼갤 이유가 없다 */
+      let lastEmotion: string | null = null;
       /** 학생 화면에 실제로 글자가 나갔는가 */
       let textSent = false;
       /** 이번 턴에 AI가 표시한 주제 이탈 횟수 (PRD F-8) */
@@ -168,16 +170,21 @@ export async function POST(request: Request) {
         controller.enqueue(encoder.encode(sse(event)));
       };
 
-      const consume = (parsed: { emotions: string[]; offTopic: number }) => {
+      /**
+       * 파서가 돌려준 조각을 **나온 순서 그대로** 흘려보낸다.
+       * 순서가 곧 "어느 문단에 어느 그림을 붙일지"라서, 감정을 몰아 보내면 안 된다.
+       */
+      const relay = (parsed: ParsedChunk) => {
         offTopicSeen += parsed.offTopic;
-        for (const raw of parsed.emotions) {
-          if (emotionSent) continue;
-          emotionSent = true;
-          send({
-            type: "emotion",
-            emotion: normalizeEmotion(characterId, raw),
-            character: characterId,
-          });
+        for (const part of parsed.parts) {
+          if (part.kind === "text") {
+            if (part.text) send({ type: "text", delta: part.text });
+            continue;
+          }
+          const emotion = normalizeEmotion(characterId, part.emotion);
+          if (emotion === lastEmotion) continue;
+          lastEmotion = emotion;
+          send({ type: "emotion", emotion, character: characterId });
         }
       };
 
@@ -206,9 +213,7 @@ export async function POST(request: Request) {
             },
             (event) => {
               if (event.type !== "text") return;
-              const parsed = emotionParser.push(event.delta);
-              consume(parsed);
-              if (parsed.text) send({ type: "text", delta: parsed.text });
+              relay(emotionParser.push(event.delta));
             },
           );
 
@@ -262,9 +267,7 @@ export async function POST(request: Request) {
           if (round === MAX_TOOL_ROUNDS - 1) ranOutOfRounds = true;
         }
 
-        const tail = emotionParser.flush();
-        consume(tail);
-        if (tail.text) send({ type: "text", delta: tail.text });
+        relay(emotionParser.flush());
 
         // 도구만 계속 부르다 끝나면 학생 화면에 아무 말도 남지 않는다.
         // 빈 말풍선 대신 상황을 알려 준다.
@@ -276,7 +279,7 @@ export async function POST(request: Request) {
           });
         }
 
-        if (!emotionSent) {
+        if (!lastEmotion) {
           send({
             type: "emotion",
             emotion: normalizeEmotion(characterId, null),

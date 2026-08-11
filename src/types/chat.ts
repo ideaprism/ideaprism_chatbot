@@ -1,5 +1,6 @@
 import type { ProviderId } from "@/lib/ai/types";
 import type { CharacterId } from "@/lib/characters";
+import type { EmotionMark } from "@/lib/emotion";
 import type { QuestState, StageId } from "@/lib/quest";
 import type { ToolName } from "@/lib/tools";
 import type { Patent, PatentSnapshot } from "@/types/kipris";
@@ -55,7 +56,13 @@ export interface ChatMessage {
   role: "user" | "assistant";
   /** assistant일 때 말한 캐릭터 */
   character?: CharacterId;
+  /** 이 말풍선의 마지막 감정 (진행판·요약처럼 한 장만 필요한 곳이 쓴다) */
   emotion?: string;
+  /**
+   * 답변 도중 감정이 바뀐 자리들.
+   * 화면은 이 자리에서 글을 토막 내 토막마다 다른 그림을 붙인다.
+   */
+  emotionMarks?: EmotionMark[];
   text: string;
   /** 이 턴에 호출된 도구 이름들 (화면에 "검색 중…" 표시용) */
   tools?: ToolName[];
