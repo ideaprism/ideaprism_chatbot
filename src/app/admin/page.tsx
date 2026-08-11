@@ -14,6 +14,8 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { HealthTab } from "./HealthTab";
+import { UsageTab } from "./UsageTab";
 import { normalizeCast, parseCast, serializeCast } from "@/lib/cast";
 import { charactersByGroup, CHARACTERS, type CharacterId } from "@/lib/characters";
 import { STAGE_IDS, STAGES, type StageId } from "@/lib/quest";
@@ -69,7 +71,74 @@ export default function AdminPage() {
 
   if (!configured) return <NotConfigured />;
   if (!authed) return <Login onDone={() => setAuthed(true)} />;
-  return <Editor />;
+  return <Console />;
+}
+
+const TABS = [
+  { id: "prompts", label: "프롬프트", caption: "대화구조 · 캐릭터 대본 · 대화 흐름" },
+  { id: "usage", label: "이용내역", caption: "학생들이 남긴 발명노트" },
+  { id: "health", label: "점검", caption: "무엇이 준비됐나" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+/** 관리자 화면 껍데기 — 머리말과 탭. 알맹이는 탭마다 다른 화면이 채운다 */
+function Console() {
+  const [tab, setTab] = useState<TabId>("prompts");
+  const current = TABS.find((one) => one.id === tab) ?? TABS[0];
+
+  return (
+    <main className="flex h-dvh flex-col">
+      <header className="shrink-0 border-b border-line bg-panel">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 pt-3 pb-2">
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-bold tracking-tight">IdeaPrism 관리자</span>
+            <span className="text-[11px] text-neutral-400">{current.caption}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/chat"
+              className="rounded-full border border-line bg-white px-3 py-1 text-xs text-neutral-600 hover:border-neutral-300"
+            >
+              학생 화면 보기
+            </Link>
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/admin/session", { method: "DELETE" });
+                window.location.reload();
+              }}
+              className="flex items-center gap-1 rounded-full border border-line bg-white px-3 py-1 text-xs text-neutral-600 hover:border-neutral-300"
+            >
+              <LogOut className="size-3" /> 나가기
+            </button>
+          </div>
+        </div>
+
+        <nav className="flex gap-1 px-5">
+          {TABS.map((one) => (
+            <button
+              key={one.id}
+              type="button"
+              onClick={() => setTab(one.id)}
+              className={cn(
+                "-mb-px border-b-2 px-3 py-2 text-sm transition-colors",
+                tab === one.id
+                  ? "border-neutral-900 font-bold text-neutral-900"
+                  : "border-transparent text-neutral-400 hover:text-neutral-700",
+              )}
+            >
+              {one.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      {tab === "prompts" && <Editor />}
+      {tab === "usage" && <UsageTab />}
+      {tab === "health" && <HealthTab />}
+    </main>
+  );
 }
 
 function NotConfigured() {
@@ -126,7 +195,7 @@ function Login({ onDone }: { onDone: () => void }) {
       <div className="w-full max-w-sm rounded-2xl border border-line bg-white px-6 py-6 shadow-sm">
         <h1 className="text-base font-bold">IdeaPrism 관리자</h1>
         <p className="mt-1 text-xs text-neutral-500">
-          캐릭터 대본과 대화 흐름을 고치는 곳입니다.
+          대화구조·대본을 고치고, 학생들이 남긴 이용내역을 보는 곳입니다.
         </p>
 
         <input
@@ -323,35 +392,7 @@ function Editor() {
   const loading = !loaded;
 
   return (
-    <main className="flex h-dvh flex-col">
-      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-panel px-5 py-3">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-bold tracking-tight">IdeaPrism 관리자</span>
-          <span className="text-[11px] text-neutral-400">
-            대화구조 · 캐릭터 대본 · 대화 흐름
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/chat"
-            className="rounded-full border border-line bg-white px-3 py-1 text-xs text-neutral-600 hover:border-neutral-300"
-          >
-            학생 화면 보기
-          </Link>
-          <button
-            type="button"
-            onClick={async () => {
-              await fetch("/api/admin/session", { method: "DELETE" });
-              window.location.reload();
-            }}
-            className="flex items-center gap-1 rounded-full border border-line bg-white px-3 py-1 text-xs text-neutral-600 hover:border-neutral-300"
-          >
-            <LogOut className="size-3" /> 나가기
-          </button>
-        </div>
-      </header>
-
-      <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1">
         {/* 왼쪽: 글 목록 */}
         <nav className="scroll-soft w-64 shrink-0 overflow-y-auto border-r border-line bg-panel px-3 py-4">
           <DocGroup
@@ -483,8 +524,7 @@ function Editor() {
             </>
           )}
         </section>
-      </div>
-    </main>
+    </div>
   );
 }
 
