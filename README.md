@@ -30,15 +30,21 @@ cp .env.local.example .env.local
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 1.0 Vercel 대시보드 | 선배 발명 검색 불가 |
 | `SUPABASE_SECRET_KEY` | 1.0 Vercel 대시보드 | 노트가 브라우저에만 남고 저장 안 됨 |
 | `KIPRIS_SERVICE_KEY` | 1.0 Vercel 대시보드 | 5단계 특허 조회 불가 |
+| `ADMIN_PASSWORD` | 대표님이 직접 정하는 값 | 관리자 페이지(`/admin`)가 열리지 않음 |
 
 > Vercel에서 가려진 값은 **Settings → Environment Variables → 항목 우측 `⋯` → Edit** 을 눌러야 보입니다.
 >
 > 값을 넣은 뒤에는 개발 서버를 **한 번 껐다 켜야** 반영됩니다.
 
-### 2. 발명노트 테이블 만들기
+### 2. 표 두 개 만들기
 
-Supabase 대시보드 → SQL Editor → [supabase/invention_notes.sql](supabase/invention_notes.sql)
-내용을 붙여넣고 **Run**. (1.0과 같은 프로젝트에 만듭니다)
+Supabase 대시보드 → SQL Editor 에서 아래 두 파일을 각각 붙여넣고 **Run**.
+(1.0과 같은 프로젝트에 만듭니다)
+
+| 파일 | 무엇을 담나 | 안 만들면 |
+|---|---|---|
+| [supabase/invention_notes.sql](supabase/invention_notes.sql) | 학생의 발명노트 | 노트가 브라우저에만 남음 |
+| [supabase/prompt_overrides.sql](supabase/prompt_overrides.sql) | 관리자 페이지에서 고친 프롬프트 | `/admin` 에서 **저장이 안 됨** (보기는 됨) |
 
 ### 3. 실행
 
@@ -81,6 +87,9 @@ http://localhost:3000/api/health 를 열면 무엇이 준비됐고 무엇이 비
 | P4 특허 연결 | KIPRIS 검색식 생성 + 조회, 편집 가능한 특허 패널 | ✅ |
 | P5 다듬기 | 주제 이탈 환기, 대화 압축, 비용 가드, 단계별 사용량 계측 | ✅ |
 | 추가 | 모델 3사 비교 구조 (Claude·OpenAI·Gemini) | ✅ |
+| 추가 | 우측 패널을 1.0 화면에 맞춤 (갤러리·상세보기·특허검색) | ✅ |
+| 추가 | 앞 단계로 되돌아가기 + 시행착오 보존 | ✅ |
+| 추가 | 관리자 페이지 — 캐릭터 대본·대화 흐름 편집 | ✅ |
 
 ### 모델 3사 비교 (PRD 7장)
 
@@ -105,48 +114,74 @@ http://localhost:3000/api/health 를 열면 무엇이 준비됐고 무엇이 비
 
 ### 검증 상태
 
-- ✅ **OpenAI로 끝까지 확인** — 첫 인사 스트리밍, 감정 태그, `complete_stage` 도구 호출,
-  코드 검증을 통한 0→1단계 승급, 배턴터치, 단계별 사용량·캐시 기록까지 실제 호출로 확인
-- ⚠️ **Claude·Gemini는 미검증** — 키가 없어 한 번도 호출하지 못했습니다
-- ⚠️ **Supabase 검색·KIPRIS 조회 미검증** — 실제 키가 필요합니다
-  (1.0 폴더의 `.env.local` 값은 자리표시자라 쓸 수 없습니다)
+- ✅ **OpenAI(`gpt-5.4-mini`)로 전 구간** — 스트리밍, 감정 태그, 퀘스트 승급, 배턴터치,
+  선배 발명 검색·필터, KIPRIS 특허 조회, 발명노트 저장까지 실제 호출로 확인
+- ✅ **Gemini(`gemini-3.6-flash`)** — 검색까지 확인
+- ✅ **우측 패널 3종** — 카드 4열/3열, 리스트 전환, 상세 모달, OPSME 특허 검색, 쪽 넘기기
+- ⚠️ **Claude는 미검증** — `ANTHROPIC_API_KEY` 가 아직 비어 있습니다
+- ⚠️ **사람이 여러 턴 이어서 0→5단계를 완주하는 테스트는 아직**입니다 (PRD 1장 성공 기준)
 
 ---
 
 ## 폴더 구조
 
 ```
-personas/                  캐릭터 대본 — "어떻게 말하는가" (말투·성격)
-flow/                      대화 흐름 지침 — "어떻게 흘러가는가"  ← 대표님이 직접 고치는 곳
-supabase/                  invention_notes 테이블 DDL
-tests/                     핵심 로직 회귀 테스트 55개
+personas/                  캐릭터 대본 — "어떻게 말하는가" (공장 초기값)
+flow/                      대화 흐름 지침 — "어떻게 흘러가는가" (공장 초기값)
+                           ↑ 둘 다 /admin 에서도 고칠 수 있습니다
+supabase/                  invention_notes · prompt_overrides 테이블 DDL
+tests/                     핵심 로직 회귀 테스트 87개
 src/
   app/
     page.tsx               채팅 + 2패널 화면
-    api/chat/route.ts      Claude 스트리밍 + 도구 실행 (서버)
+    admin/page.tsx         관리자 화면 (프롬프트 편집)
+    api/chat/route.ts      AI 스트리밍 + 도구 실행 (서버)
+    api/search/route.ts    학생이 우측에서 직접 검색 (AI 안 거침)
     api/kipris/route.ts    특허 패널에서 검색식 고쳐 다시 찾기 (AI 안 거침)
+    api/admin/            관리자 로그인 · 프롬프트 읽기/저장/되돌리기
     api/health/route.ts    연결 점검
   components/              진행판 · 말풍선 · 감정 이미지 · 검색/노트/특허 패널
   hooks/useChat.ts         대화·패널 상태 관리
   lib/
     ai/config.ts           모델·강도·비용 상한       ← 모델 교체는 여기만
+    admin/auth.ts          관리자 잠금 (접근 코드·서명 쿠키)
+    prompts/store.ts       프롬프트 저장소 (파일 기본값 + DB 덮어쓰기)
     characters.ts          캐릭터 + 감정 이미지 매핑
-    personas.ts            페르소나 로더 (이미지 지시문 자동 제거)
+    personas.ts            페르소나 정제 (이미지 지시문 자동 제거)
     quest.ts               퀘스트 상태기계 + 승급 검증  ← 단계 판정은 여기만
     tools.ts               도구 8종 명세
     tool-handlers.ts       도구 실행기
     prompt.ts              프롬프트 조립 + 표식 파서 + 대화 압축
+    tag-styles.ts          태그 색·아이콘 (1.0과 같은 색값)
     search/                검색어 파서 · Supabase 조회 · 필터/통계
-    kipris/                검색식 생성 · 특허청 조회
+    kipris/                검색식 생성 · 특허청 조회 · OPSME 키워드
     notes/                 발명노트 계산 · 저장
     usage.ts               단계별 토큰 사용량
 ```
 
 ---
 
-## 대화 흐름 고치기 (코드 안 건드리고)
+## 관리자 페이지 — 브라우저에서 프롬프트 고치기
+
+**http://localhost:3000/admin** (배포하면 `배포주소/admin`)
+
+캐릭터 대본 3편과 대화 흐름 9편을 골라 고치고 저장합니다. 파일을 직접 열 필요가 없습니다.
+
+- **저장은 Supabase로 갑니다.** 배포한 서버는 파일이 읽기 전용이라 파일에 못 쓰고,
+  파일을 덮어쓰면 원본이 사라져 되돌릴 수 없기 때문입니다.
+  `personas/`·`flow/` 파일은 **공장 초기값**으로 남고, 고친 값이 있으면 그쪽이 쓰입니다.
+  **"처음으로" 버튼**은 고친 값을 지우는 일이라 언제든 안전하게 되돌아갑니다.
+- **잠금이 기본값입니다.** `ADMIN_PASSWORD` 가 없으면 페이지 자체가 열리지 않습니다.
+  실수로 잠금 없이 배포되는 일을 막기 위해서입니다.
+- **"AI가 받는 내용"** 을 누르면 저장 전에 실제로 전달될 모습을 미리 봅니다
+  (안내 주석과 페르소나의 옛 이미지 지시문이 걸러진 뒤의 글).
+
+---
+
+## 대화 흐름 고치기 (파일로 직접)
 
 `flow/` 폴더의 파일을 고치고 새로고침하면 바로 반영됩니다.
+(관리자 페이지에서 같은 글을 고쳐 둔 상태라면 그쪽이 우선합니다)
 
 | 파일 | 무엇을 정하나 |
 |---|---|
@@ -197,7 +232,27 @@ PRD의 아키텍처 원칙이 코드 어디에 박혀 있는지:
 ```bash
 npm run dev        # 개발 서버
 npm run build      # 배포용 빌드
-npm test           # 핵심 로직 테스트 (55개)
+npm test           # 핵심 로직 테스트 (87개)
 npm run typecheck  # 타입 검사
 npm run lint       # 린트
 ```
+
+---
+
+## 배포 (Vercel)
+
+프로토타입 기간에는 **비공개 저장소 + 비공개 배포**로 둡니다.
+
+1. [vercel.com/new](https://vercel.com/new) → 이 저장소를 **Import**
+   (1.0과 겹치지 않게 **새 프로젝트**로 만듭니다)
+2. **Environment Variables** 에 `.env.local` 에 넣은 값을 그대로 넣습니다.
+   위 "시작하기" 표의 변수 전부 — 특히 `ADMIN_PASSWORD` 를 빠뜨리면 `/admin` 이 안 열립니다.
+3. **Deploy**
+
+배포 뒤 `배포주소/api/health` 를 열어 무엇이 준비됐는지 확인합니다.
+(키 "값"은 표시되지 않고, 채워졌는지 여부만 나옵니다)
+
+> 환경변수를 고친 뒤에는 Vercel에서 **Redeploy** 해야 반영됩니다.
+>
+> 프로토타입은 익명이라 로그인이 없습니다. 외부에 주소가 알려지지 않게 관리하시고,
+> 필요하면 Vercel의 **Deployment Protection** 으로 한 겹 더 잠글 수 있습니다.
