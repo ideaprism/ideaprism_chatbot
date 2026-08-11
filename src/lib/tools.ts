@@ -9,10 +9,15 @@
  *   P3 — update_note 실제 저장(Supabase)
  *   P4 — generate_kipris_query, search_kipris
  * 아직 구현되지 않은 도구는 AI에게 아예 건네지 않는다(없는 버튼을 누르지 않도록).
+ *
+ * **어느 단계에 어떤 버튼을 주는지는 여기 없다.** 그건 트랙 데이터가 들고 있다
+ * (`track/tracks/*.ts` 의 `tools`). 단계 수가 트랙마다 다르므로,
+ * 단계 번호가 들어가는 두 도구(update_note·complete_stage)의 설명도 트랙에서 만든다.
  */
 
 import type { AiTool } from "./ai/types";
-import { STAGE_IDS, type StageId } from "./quest";
+import type { StageId } from "./quest";
+import { getTrack, stageAt, stageIdsOf, type Track } from "./track";
 
 export type ToolName =
   | "search_inventions"
@@ -40,7 +45,11 @@ export const IMPLEMENTED_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
   "send_off_expert",
 ]);
 
-export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
+/** 단계 번호가 안 들어가는 도구들 — 트랙과 무관하게 늘 같다 */
+const FIXED_SCHEMAS: Record<
+  Exclude<ToolName, "update_note" | "complete_stage">,
+  AiTool
+> = {
   search_inventions: {
     name: "search_inventions",
     description:
@@ -195,68 +204,6 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
     parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
 
-  update_note: {
-    name: "update_note",
-    description:
-      "발명노트에 지금까지의 진행을 기록한다. 단계가 끝날 때뿐 아니라, 학생이 중요한 " +
-      "이야기를 했을 때(문제 정의문, 아이디어 후보 등) 그때그때 적어 둔다. " +
-      "학생의 말을 각색하지 말고 요지를 그대로 옮긴다.",
-    parameters: {
-      type: "object",
-      properties: {
-        stage: {
-          type: "integer",
-          enum: [...STAGE_IDS],
-          description: "기록할 단계 번호 (0~5)",
-        },
-        summary: {
-          type: "string",
-          description: "이 단계에서 학생과 나눈 내용의 요지. 2~4문장.",
-        },
-        details: {
-          type: "object",
-          description: "구조화해 남길 값 (선택). 예: { problemStatement: '...' }",
-          additionalProperties: true,
-        },
-      },
-      required: ["stage", "summary"],
-      additionalProperties: false,
-    },
-  },
-
-  complete_stage: {
-    name: "complete_stage",
-    description:
-      "현재 단계의 완료 조건을 모두 채웠을 때 호출한다. 프로그램이 산출물을 검증하고, " +
-      "통과해야만 다음 단계로 넘어간다. 검증에 실패하면 부족한 항목을 알려 주므로 " +
-      "대화를 더 이어간 뒤 다시 호출하면 된다. 스스로 '다음 단계로 가자'고 선언하지 말고 " +
-      "반드시 이 도구를 통해서만 단계를 올린다.",
-    parameters: {
-      type: "object",
-      properties: {
-        stage: {
-          type: "integer",
-          enum: [...STAGE_IDS],
-          description: "완료를 신청하는 단계 번호. 반드시 '현재' 단계여야 한다.",
-        },
-        artifact: {
-          type: "object",
-          description:
-            "그 단계의 산출물. 단계마다 필요한 항목이 다르다.\n" +
-            "0단계: { nickname, interests[], matchedFriends:[친구id, 친구id] } — 서로 다른 두 명\n" +
-            "1단계: { problemArea, observations[] }\n" +
-            "2단계: { problemStatement, target, pain }\n" +
-            "3단계: { techniquesTried[](2개 이상), candidates[](2개 이상) }\n" +
-            "4단계: { title, summary, howItWorks, differentiator }\n" +
-            "5단계: { kiprisQuery, similarPatents[], differentiation }",
-          additionalProperties: true,
-        },
-      },
-      required: ["stage", "artifact"],
-      additionalProperties: false,
-    },
-  },
-
   call_expert: {
     name: "call_expert",
     description:
@@ -294,37 +241,102 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
   },
 };
 
-/** 단계별로 노출할 도구 목록 (아직 구현 안 된 도구는 자동으로 걸러진다) */
-const STAGE_TOOLS: Record<StageId, ToolName[]> = {
-  // 0단계는 선생님이 학생을 알아보는 자리다. 전문가를 부를 일이 없다.
-  0: ["complete_stage"],
-  1: ["search_inventions", "apply_filters", "get_statistics", "show_invention", "update_note", "complete_stage", "call_expert", "send_off_expert"],
-  2: ["search_inventions", "apply_filters", "get_statistics", "update_note", "complete_stage", "call_expert", "send_off_expert"],
-  3: ["search_inventions", "apply_filters", "get_statistics", "show_invention", "update_note", "complete_stage", "call_expert", "send_off_expert"],
-  4: ["update_note", "complete_stage", "call_expert", "send_off_expert"],
-  // 5단계도 발명 검색이 필요하다 — 기초 검색식으로 삼을 비슷한 선배 발명을 먼저 골라야 한다
-  5: [
-    "search_inventions",
-    "apply_filters",
-    "show_invention",
-    "generate_kipris_query",
-    "search_kipris",
-    "update_note",
-    "complete_stage",
-    "call_expert",
-    "send_off_expert",
-  ],
-};
+/**
+ * 단계 번호가 들어가는 두 도구 — 트랙마다 단계 수와 산출물 모양이 다르므로
+ * 그 트랙의 데이터로 설명을 만든다.
+ */
+function stageSchemas(track: Track): Record<"update_note" | "complete_stage", AiTool> {
+  const ids = stageIdsOf(track);
+  const range = `${ids[0]}~${ids[ids.length - 1]}`;
+  const shapes = track.stages
+    .filter((stage) => stage.artifactShape)
+    .map((stage) => `${stage.id}단계: ${stage.artifactShape}`)
+    .join("\n");
+
+  return {
+    update_note: {
+      name: "update_note",
+      description:
+        "발명노트에 지금까지의 진행을 기록한다. 단계가 끝날 때뿐 아니라, 학생이 중요한 " +
+        "이야기를 했을 때(문제 정의문, 아이디어 후보 등) 그때그때 적어 둔다. " +
+        "학생의 말을 각색하지 말고 요지를 그대로 옮긴다.",
+      parameters: {
+        type: "object",
+        properties: {
+          stage: {
+            type: "integer",
+            enum: [...ids],
+            description: `기록할 단계 번호 (${range})`,
+          },
+          summary: {
+            type: "string",
+            description: "이 단계에서 학생과 나눈 내용의 요지. 2~4문장.",
+          },
+          details: {
+            type: "object",
+            description: "구조화해 남길 값 (선택). 예: { problemStatement: '...' }",
+            additionalProperties: true,
+          },
+        },
+        required: ["stage", "summary"],
+        additionalProperties: false,
+      },
+    },
+
+    complete_stage: {
+      name: "complete_stage",
+      description:
+        "현재 단계의 완료 조건을 모두 채웠을 때 호출한다. 프로그램이 산출물을 검증하고, " +
+        "통과해야만 다음 단계로 넘어간다. 검증에 실패하면 부족한 항목을 알려 주므로 " +
+        "대화를 더 이어간 뒤 다시 호출하면 된다. 스스로 '다음 단계로 가자'고 선언하지 말고 " +
+        "반드시 이 도구를 통해서만 단계를 올린다.",
+      parameters: {
+        type: "object",
+        properties: {
+          stage: {
+            type: "integer",
+            enum: [...ids],
+            description: "완료를 신청하는 단계 번호. 반드시 '현재' 단계여야 한다.",
+          },
+          artifact: {
+            type: "object",
+            description: `그 단계의 산출물. 단계마다 필요한 항목이 다르다.\n${shapes}`,
+            additionalProperties: true,
+          },
+        },
+        required: ["stage", "artifact"],
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+/** 트랙마다 한 번만 만든다. 발행 번호가 오르면 새로 만든다 */
+const schemaCache = new Map<string, Record<ToolName, AiTool>>();
+
+function schemasFor(track: Track): Record<ToolName, AiTool> {
+  const key = `${track.id}@${track.version}`;
+  const cached = schemaCache.get(key);
+  if (cached) return cached;
+
+  const built: Record<ToolName, AiTool> = { ...FIXED_SCHEMAS, ...stageSchemas(track) };
+  schemaCache.set(key, built);
+  return built;
+}
+
+/** 기본 트랙 기준의 도구 명세 (도구 이름을 확인하는 곳이 쓴다) */
+export const TOOL_SCHEMAS: Record<ToolName, AiTool> = schemasFor(getTrack());
 
 /**
  * 이번 요청에서 AI에게 건넬 도구 목록.
  * 도구는 프롬프트 맨 앞에 렌더링되므로, 단계가 바뀔 때만 목록이 바뀌도록 설계했다
  * (= 캐시가 깨지는 지점이 배턴터치와 일치한다).
  */
-export function toolsForStage(stage: StageId): AiTool[] {
-  return STAGE_TOOLS[stage]
-    .filter((name) => IMPLEMENTED_TOOLS.has(name))
-    .map((name) => TOOL_SCHEMAS[name]);
+export function toolsForStage(stage: StageId, track: Track = getTrack()): AiTool[] {
+  const schemas = schemasFor(track);
+  return stageAt(track, stage)
+    .tools.filter((name) => IMPLEMENTED_TOOLS.has(name))
+    .map((name) => schemas[name]);
 }
 
 export function isToolName(value: string): value is ToolName {

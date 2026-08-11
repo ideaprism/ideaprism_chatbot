@@ -30,11 +30,11 @@ import { KiprisError, searchKipris } from "./kipris/service";
 import {
   advanceStage,
   NO_EVIDENCE,
-  STAGES,
-  STAGE_IDS,
+  trackOf,
   type StageEvidence,
   type StageId,
 } from "./quest";
+import { stageAt, stageIdsOf } from "./track";
 import {
   availableValues,
   describeStats,
@@ -65,9 +65,15 @@ export interface ToolOutcome {
   isError: boolean;
 }
 
-function asStage(value: unknown): StageId | null {
+/** 이 대화의 트랙에 실제로 있는 단계 번호인가 (트랙마다 단계 수가 다르다) */
+function asStage(value: unknown, ids: StageId[]): StageId | null {
   const n = typeof value === "number" ? value : Number(value);
-  return STAGE_IDS.includes(n as StageId) ? (n as StageId) : null;
+  return ids.includes(n) ? n : null;
+}
+
+/** "stage는 0~5 사이의 숫자여야 합니다." — 트랙의 단계 범위로 만든다 */
+function stageRangeNote(ids: StageId[]): string {
+  return `stage는 ${ids[0]}~${ids[ids.length - 1]} 사이의 숫자여야 합니다.`;
 }
 
 function asStringArray(value: unknown): string[] | undefined {
@@ -272,6 +278,10 @@ export async function executeTool(
   if (!isToolName(name)) return keep(`알 수 없는 도구입니다: ${name}`, true);
 
   const args = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+
+  // 이 대화가 밟고 있는 학습 프로그램 — 단계 번호·이름·대본이 전부 여기서 나온다
+  const track = trackOf(session.quest);
+  const stageIds = stageIdsOf(track);
 
   switch (name as ToolName) {
     // ── 검색 ────────────────────────────────────────────────
@@ -645,10 +655,10 @@ export async function executeTool(
 
     // ── 노트·퀘스트 ─────────────────────────────────────────
     case "update_note": {
-      const stage = asStage(args.stage);
+      const stage = asStage(args.stage, stageIds);
       const summary = typeof args.summary === "string" ? args.summary.trim() : "";
 
-      if (stage === null) return keep("stage는 0~5 사이의 숫자여야 합니다.", true);
+      if (stage === null) return keep(stageRangeNote(stageIds), true);
       if (summary.length < 5) {
         return keep("summary가 너무 짧습니다. 무엇을 나눴는지 2~4문장으로 적어 주세요.", true);
       }
@@ -720,8 +730,8 @@ export async function executeTool(
     }
 
     case "complete_stage": {
-      const stage = asStage(args.stage);
-      if (stage === null) return keep("stage는 0~5 사이의 숫자여야 합니다.", true);
+      const stage = asStage(args.stage, stageIds);
+      if (stage === null) return keep(stageRangeNote(stageIds), true);
 
       // 승급 전 담당 캐릭터 — 배턴터치 연출에서 "누가 떠나는지" 표시에 쓴다
       const from = hostAt(session.cast, session.quest.currentStage);
@@ -730,7 +740,11 @@ export async function executeTool(
       // 5단계는 이걸로 "특허를 정말 조회했는가"를 판정한다.
       const evidence: StageEvidence =
         session.patent && session.patent.totalCount >= 0
-          ? { kiprisQuery: session.patent.query, kiprisTotal: session.patent.totalCount }
+          ? {
+              kiprisQuery: session.patent.query,
+              kiprisTotal: session.patent.totalCount,
+              basedOnInventionId: session.patent.basedOn?.id ?? null,
+            }
           : NO_EVIDENCE;
 
       // 0단계에서 선생님이 짝지어 준 친구 두 명을 1~4단계에 앉힌다.
@@ -784,6 +798,7 @@ export async function executeTool(
           from,
           castAt(cast, outcome.nextStage),
           outcome.nextStage,
+          track,
         );
         events.push({
           type: "handoff",
@@ -794,8 +809,8 @@ export async function executeTool(
       } else if (stage !== outcome.nextStage) {
         guidance =
           `${stage}단계 완료! 이어서 ${outcome.nextStage}단계 ` +
-          `「${STAGES[outcome.nextStage].label}」을 진행하세요.\n\n` +
-          (await stageMission(outcome.nextStage));
+          `「${stageAt(track, outcome.nextStage).label}」을 진행하세요.\n\n` +
+          (await stageMission(outcome.nextStage, track));
       }
 
       events.push({ type: "state", session: next });

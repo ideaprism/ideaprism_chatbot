@@ -27,7 +27,8 @@ import {
   type ParsedChunk,
   type TurnContext,
 } from "@/lib/prompt";
-import { STAGES } from "@/lib/quest";
+import { trackOf } from "@/lib/quest";
+import { stageAt } from "@/lib/track";
 import { isSessionState, noteDigest } from "@/lib/session";
 import { executeTool } from "@/lib/tool-handlers";
 import { isToolName, toolsForStage } from "@/lib/tools";
@@ -93,7 +94,9 @@ export async function POST(request: Request) {
     cast: session.cast ? normalizeCast(session.cast) : await loadCast(),
   };
 
-  const stage = STAGES[session.quest.currentStage];
+  // 이 대화가 밟고 있는 학습 프로그램. 단계 이름·대본·도구가 전부 여기서 나온다
+  const track = trackOf(session.quest);
+  const stage = stageAt(track, session.quest.currentStage);
   // 지금 이 자리에 있는 목소리들 — 짝지어 준 친구들 + 불려 온 전문가(손님).
   // 첫 번째가 이 단계를 이끈다.
   const crew = castAt(session.cast, session.quest.currentStage);
@@ -113,7 +116,7 @@ export async function POST(request: Request) {
   // 파일이 없거나 잘못돼도 코드에 든 기본 문구로 조용히 되돌아간다.
   const [rulesTemplate, mission] = await Promise.all([
     operatingRulesTemplate(),
-    stageMission(session.quest.currentStage),
+    stageMission(session.quest.currentStage, track),
   ]);
 
   const ctx: TurnContext = {
@@ -121,7 +124,7 @@ export async function POST(request: Request) {
     character: characterId,
     nickname: session.nickname,
     offTopicCount: session.offTopicCount,
-    noteDigest: noteDigest(session.notes),
+    noteDigest: noteDigest(session.notes, track),
     search: session.search,
     patent: session.patent,
     mission,
@@ -152,6 +155,7 @@ export async function POST(request: Request) {
             body.handoffFrom ?? null,
             characterId,
             session.quest.currentStage,
+            track,
           ),
         )
       : body.intent === "revisit"
@@ -171,7 +175,7 @@ export async function POST(request: Request) {
     rulesTemplate,
     voices.slice(1).map((id, index) => ({ id, personaText: personas[index + 1] })),
   );
-  const tools = toolsForStage(session.quest.currentStage);
+  const tools = toolsForStage(session.quest.currentStage, track);
 
   const encoder = new TextEncoder();
 

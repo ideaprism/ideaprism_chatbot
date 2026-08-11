@@ -6,7 +6,8 @@
  * 어느 단계가 어려운지 판단할 근거라, 테스트로 못박아 둘 값어치가 있다.
  */
 
-import { STAGES, STAGE_IDS, type StageId } from "@/lib/quest";
+import type { StageId } from "@/lib/quest";
+import { getTrack, stageAt, stageIdsOf } from "@/lib/track";
 import type { SessionState } from "@/types/chat";
 
 /** 저장할 한 단계의 기록 */
@@ -27,11 +28,18 @@ export interface StageRecord {
 }
 
 /** 단계 체류 시간 — 다음 단계 진입 시각에서 이 단계 진입 시각을 뺀다 */
-function dwellOf(session: SessionState, stage: StageId, now: number): number | null {
+function dwellOf(
+  session: SessionState,
+  stage: StageId,
+  /** 이 트랙의 단계 번호들 (진행 순서) */
+  ids: StageId[],
+  now: number,
+): number | null {
   const enteredAt = session.quest.enteredAt[stage];
   if (!enteredAt) return null;
 
-  const next = stage < 5 ? session.quest.enteredAt[(stage + 1) as StageId] : undefined;
+  const nextId = ids[ids.indexOf(stage) + 1];
+  const next = nextId !== undefined ? session.quest.enteredAt[nextId] : undefined;
   if (next) return next - enteredAt;
 
   // 마지막 단계는 완료된 시점에만 확정한다
@@ -43,9 +51,11 @@ export function buildStagePayload(
   now: number = Date.now(),
 ): Record<string, StageRecord> {
   const { quest, notes } = session;
+  const track = getTrack(quest.trackId);
+  const ids = stageIdsOf(track);
   const payload: Record<string, StageRecord> = {};
 
-  for (const stage of STAGE_IDS) {
+  for (const stage of ids) {
     const note = notes.find((entry) => entry.stage === stage);
     const artifact = quest.completed[stage];
     const enteredAt = quest.enteredAt[stage];
@@ -54,11 +64,11 @@ export function buildStagePayload(
     if (!note && artifact === undefined && enteredAt === undefined) continue;
 
     payload[String(stage)] = {
-      label: STAGES[stage].label,
+      label: stageAt(track, stage).label,
       summary: note?.summary ?? null,
       artifact: artifact ?? note?.details ?? null,
       earlierAttempts: quest.history?.[stage] ?? [],
-      dwellMs: dwellOf(session, stage, now),
+      dwellMs: dwellOf(session, stage, ids, now),
       retries: quest.retries[stage] ?? 0,
     };
   }

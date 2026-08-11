@@ -48,7 +48,8 @@
 
 ## 시작 상태 (2026-08-12 갱신)
 
-P0~P5 + 그 위에 얹은 것들까지 구현 완료. **로컬·GitHub·Vercel 전부 동기화(`16dab9a`).**
+P0~P5 + 그 위에 얹은 것들까지 구현 완료. 배포본은 `16dab9a`,
+**로컬은 학습 프로그램 스튜디오 1단계만큼 앞서 있다(아직 push 안 함).**
 https://ideaprism-chatbot.vercel.app · https://github.com/ideaprism/ideaprism_chatbot
 
 굵직한 것만:
@@ -62,6 +63,9 @@ https://ideaprism-chatbot.vercel.app · https://github.com/ideaprism/ideaprism_c
 - **전문가 초대** — 탐정은 5단계에서, 코치·연구원은 부를 때만
 - **한 답변 안에서 문단마다 감정 그림이 바뀐다**
 - **관리자 `/admin`** — 탭 셋(프롬프트·이용내역·점검). 대화구조도 여기서 바꾼다
+- **학습 프로그램(트랙)을 데이터로 꺼냈다** — 단계 이름·대본·도구·완료 조건이
+  `src/lib/track/` 에 있다. 완료 조건은 **부품 서랍**에서 골라 조립한다(`track/rules.ts`).
+  단계 수는 트랙마다 다를 수 있다 — `0~5`·`stage < 5` 를 새로 쓰지 말 것
 
 **남은 일**(학습 프로그램 스튜디오, 선생님 supervisor, 관리자 설정)과
 굳힌 결정·함정 모음은 전부 [HANDOFF.md](HANDOFF.md)에 있다. **새 세션이면 그것부터 읽을 것.**

@@ -1,6 +1,7 @@
 import type { ProviderId } from "./ai/types";
 import { DEFAULT_CAST, normalizeCast, type Cast } from "./cast";
-import { initialQuestState, STAGES, type StageId } from "./quest";
+import { initialQuestState, type StageId } from "./quest";
+import { getTrack, stageAt, type Track } from "./track";
 import type { NoteEntry, SessionState } from "@/types/chat";
 
 /**
@@ -56,7 +57,10 @@ export function isSessionState(value: unknown): value is SessionState {
 }
 
 /** 발명노트를 AI에게 다시 넣어 줄 짧은 요지로 만든다 (PRD F-7: 노트 요지는 항상 유지) */
-export function noteDigest(notes: NoteEntry[]): string | null {
+export function noteDigest(
+  notes: NoteEntry[],
+  track: Track = getTrack(),
+): string | null {
   if (notes.length === 0) return null;
 
   // 단계별로 가장 최근 기록만 남긴다
@@ -65,7 +69,7 @@ export function noteDigest(notes: NoteEntry[]): string | null {
 
   return [...latest.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([stage, note]) => `- ${stage}단계(${STAGES[stage].label}): ${note.summary}`)
+    .map(([stage, note]) => `- ${stage}단계(${stageAt(track, stage).label}): ${note.summary}`)
     .join("\n");
 }
 

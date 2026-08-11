@@ -12,7 +12,7 @@
 
 import type { AiMessage } from "./ai/types";
 import { emotionNames, getCharacter, type CharacterId } from "./characters";
-import { STAGES, type QuestState, type StageId } from "./quest";
+import { stageOf, type QuestState, type StageId } from "./quest";
 import type { PatentSnapshot } from "@/types/kipris";
 import type { SearchSnapshot } from "@/types/search";
 
@@ -168,7 +168,7 @@ export interface TurnContext {
  * 이 블록이 앞쪽에 있으면 매 턴 캐시가 깨진다.
  */
 export function buildTurnBriefing(ctx: TurnContext): string {
-  const stage = STAGES[ctx.quest.currentStage];
+  const stage = stageOf(ctx.quest);
   const lines: string[] = [];
 
   lines.push("<운영지침>");
@@ -321,7 +321,7 @@ export function handoffTurn(ctx: TurnContext, entranceCue: string): AiMessage {
  * 그때 무엇을 정리했는지는 운영지침의 노트 요지에 들어 있다.
  */
 export function revisitTurn(ctx: TurnContext, previousStage: StageId): AiMessage {
-  const stage = STAGES[ctx.quest.currentStage];
+  const stage = stageOf(ctx.quest);
   return {
     role: "user",
     content:

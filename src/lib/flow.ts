@@ -19,21 +19,20 @@ import "server-only";
 import { getCharacter, type CharacterId } from "./characters";
 import { fillPlaceholders } from "./prompt";
 import { readPrompt } from "./prompts/store";
-import { STAGES, type StageId } from "./quest";
+import type { StageId } from "./quest";
+import { getTrack, stageAt, type Track } from "./track";
 
-/** 단계 번호 → 파일 이름 (대표님이 폴더에서 바로 알아볼 수 있게 한글로) */
-const STAGE_FILES: Record<StageId, string> = {
-  0: "0-시작",
-  1: "1-소재발견",
-  2: "2-문제정의",
-  3: "3-문제해결",
-  4: "4-아이디어도출",
-  5: "5-발명특허검색",
-};
+/**
+ * 단계마다 어느 파일을 읽는지는 트랙 데이터에 적혀 있다 (`flowFile`).
+ * 파일 이름은 대표님이 폴더에서 바로 알아볼 수 있게 한글이다.
+ */
+function stageFilesOf(track: Track): string[] {
+  return track.stages.flatMap((stage) => (stage.flowFile ? [stage.flowFile] : []));
+}
 
 export const FLOW_FILES = [
   "공통규칙",
-  ...Object.values(STAGE_FILES),
+  ...stageFilesOf(getTrack()),
   "배턴터치-퇴장",
   "배턴터치-등장",
 ];
@@ -59,9 +58,14 @@ export async function operatingRulesTemplate(): Promise<string | null> {
   return loadFlow("공통규칙");
 }
 
-/** 이번 단계에서 할 일. 파일이 없으면 quest.ts 의 기본 문구 */
-export async function stageMission(stage: StageId): Promise<string> {
-  return (await loadFlow(STAGE_FILES[stage])) ?? STAGES[stage].mission;
+/** 이번 단계에서 할 일. 파일이 없으면 트랙에 적힌 기본 대본 */
+export async function stageMission(
+  stage: StageId,
+  track: Track = getTrack(),
+): Promise<string> {
+  const def = stageAt(track, stage);
+  const fromFile = def.flowFile ? await loadFlow(def.flowFile) : null;
+  return fromFile ?? def.mission;
 }
 
 /**
@@ -72,22 +76,24 @@ export async function handoffExitText(
   from: CharacterId,
   to: CharacterId | CharacterId[],
   nextStage: StageId,
+  track: Track = getTrack(),
 ): Promise<string> {
   const next = (Array.isArray(to) ? to : [to]).map((id) => getCharacter(id).name);
   const nextNames = next.join("과(와) ");
+  const nextLabel = stageAt(track, nextStage).label;
 
   const values = {
     현재캐릭터: getCharacter(from).name,
     다음캐릭터: nextNames,
     다음단계번호: String(nextStage),
-    다음단계이름: STAGES[nextStage].label,
+    다음단계이름: nextLabel,
   };
 
   const template = await loadFlow("배턴터치-퇴장");
   if (template) return fillPlaceholders(template, values);
 
   return (
-    `이번 단계를 마쳤다. 다음은 ${nextStage}단계 「${STAGES[nextStage].label}」이고 ` +
+    `이번 단계를 마쳤다. 다음은 ${nextStage}단계 「${nextLabel}」이고 ` +
     `${nextNames}이(가) 이어받는다. 지금 맡은 역할로 따뜻하게 퇴장 인사를 건네고 ` +
     `${next.length > 1 ? "두 사람" : "다음 캐릭터"}을 소개하며 마무리하세요. ` +
     `다음 캐릭터의 대사는 당신이 쓰지 않습니다.`
@@ -99,11 +105,12 @@ export async function handoffEnterText(
   from: CharacterId | null,
   to: CharacterId,
   stage: StageId,
+  track: Track = getTrack(),
 ): Promise<string> {
   const values = {
     이전캐릭터: from ? getCharacter(from).name : "앞 캐릭터",
     현재캐릭터: getCharacter(to).name,
-    단계이름: STAGES[stage].label,
+    단계이름: stageAt(track, stage).label,
   };
 
   const template = await loadFlow("배턴터치-등장");
