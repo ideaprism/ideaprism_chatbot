@@ -41,7 +41,7 @@ test("단계 요약과 산출물이 함께 담긴다", () => {
 
   const payload = buildStagePayload(session);
 
-  assert.equal(payload["1"].label, "문제 발견");
+  assert.equal(payload["1"].label, "소재 발견");
   assert.equal(payload["1"].summary, "우산 이야기를 나눴다");
   assert.deepEqual(payload["1"].artifact, {
     problemArea: "우산",

@@ -89,7 +89,7 @@ function check(
 export const STAGES: Record<StageId, StageDefinition> = {
   0: {
     id: 0,
-    label: "만남",
+    label: "시작",
     character: "teacher",
     doneWhen: "별명과 관심사를 나누고, 함께할 발명 선배를 소개받으면 완료",
     mission: `학생과 처음 만나는 단계다.
@@ -113,7 +113,7 @@ export const STAGES: Record<StageId, StageDefinition> = {
 
   1: {
     id: 1,
-    label: "문제 발견",
+    label: "소재 발견",
     character: "jiyou",
     doneWhen: "생활 속에서 불편했던 장면을 찾아내면 완료",
     mission: `학생이 "무엇이 불편했는지"를 찾아내게 돕는 단계다.
@@ -161,7 +161,7 @@ export const STAGES: Record<StageId, StageDefinition> = {
 
   3: {
     id: 3,
-    label: "아이디어 탐색",
+    label: "문제해결(SCAMPER)",
     character: "jiyou",
     doneWhen: "SCAMPER 기법을 2가지 이상 써서 아이디어 후보를 모으면 완료",
     mission: `SCAMPER로 아이디어를 넓히는 단계다.
@@ -185,7 +185,7 @@ export const STAGES: Record<StageId, StageDefinition> = {
 
   4: {
     id: 4,
-    label: "아이디어 확정",
+    label: "아이디어 도출",
     character: "jiyou",
     doneWhen: "발명의 이름·작동 방식·차별점이 정리되면 완료",
     mission: `후보 중 하나를 골라 아이디어를 또렷하게 만드는 단계다.
@@ -211,7 +211,7 @@ export const STAGES: Record<StageId, StageDefinition> = {
 
   5: {
     id: 5,
-    label: "선행기술조사",
+    label: "발명 / 특허검색",
     character: "detective",
     doneWhen: "KIPRIS로 비슷한 특허를 찾아보고 차별점을 정리하면 완료",
     mission: `아이디어가 얼마나 새로운지 확인하는 마지막 단계다.

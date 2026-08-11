@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowRight, Lightbulb } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
+import { Wordmark } from "@/components/Wordmark";
 import { charactersByGroup, emotionImageUrl } from "@/lib/characters";
 import { STAGES, type StageId } from "@/lib/quest";
 import { SESSION_STORAGE_KEY } from "@/lib/session";
@@ -20,19 +21,6 @@ import { SESSION_STORAGE_KEY } from "@/lib/session";
  * 그래서 세로 여백은 화면 높이에 따라 줄어들고(py-*), 아주 낮은 창에서만
  * 잘리지 않도록 스크롤이 생긴다.
  */
-
-/** 1.0 헤더의 무지개 워드마크 — 글자마다 색이 다르다 (프리즘) */
-const WORDMARK: Array<[string, string]> = [
-  ["I", "text-red-500"],
-  ["d", "text-orange-500"],
-  ["e", "text-yellow-500"],
-  ["a", "text-green-500"],
-  ["P", "text-teal-500"],
-  ["r", "text-blue-500"],
-  ["i", "text-indigo-500"],
-  ["s", "text-violet-500"],
-  ["m", "text-purple-600"],
-];
 
 /**
  * 하던 대화가 어디까지 왔는지 sessionStorage 에서 읽는다.
@@ -96,18 +84,7 @@ export default function Landing() {
 
       <header className="relative z-10 shrink-0 border-b border-outline-variant/20 bg-surface/70 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-2">
-            <div className="rounded-xl bg-primary/5 p-2">
-              <Lightbulb className="size-5 text-amber-500 sm:size-6" />
-            </div>
-            <span className="flex items-center text-xl font-black tracking-tight sm:text-2xl">
-              {WORDMARK.map(([letter, color]) => (
-                <span key={letter + color} className={color}>
-                  {letter}
-                </span>
-              ))}
-            </span>
-          </div>
+          <Wordmark />
 
           <span className="rounded-full border border-outline-variant/60 bg-surface px-3 py-1 text-[11px] font-bold text-on-surface-variant">
             2.0 프로토타입
