@@ -1,6 +1,14 @@
 "use client";
 
-import { Check, Copy, Loader2, Search, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Copy,
+  ImageIcon,
+  Loader2,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PatentCard } from "./PatentCard";
@@ -189,10 +197,13 @@ export function PatentPanel({
   seed,
   patents,
   onResult,
+  onOpenInvention,
 }: {
   snapshot: PatentSnapshot | null;
   seed: PatentSeed | null;
   patents: Patent[];
+  /** 기초로 삼은 선배 발명을 다시 열어 준다 (없으면 썸네일이 눌리지 않는다) */
+  onOpenInvention?: (inventionId: string) => void;
   /**
    * 조회 결과를 세션에 실을 때 부른다 (5단계 선행기술조사).
    * 선배 발명을 구경하다 들어온 특허 검색은 이걸 주지 않는다 —
@@ -391,6 +402,14 @@ export function PatentPanel({
 
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
+      {/* 이 검색식이 어느 발명에서 나왔는지 — 학생이 고른 '기초' */}
+      {snapshot?.basedOn && (
+        <BasedOnBar
+          basedOn={snapshot.basedOn}
+          onOpen={onOpenInvention ? () => onOpenInvention(snapshot.basedOn!.id) : undefined}
+        />
+      )}
+
       <div className="scroll-soft min-h-0 flex-1 overflow-y-auto">
         {/* 검색식 만들기 */}
         <div className="space-y-4 border-b border-line bg-neutral-50 px-5 py-4">
@@ -661,6 +680,63 @@ export function PatentPanel({
         KIPRIS Plus를 통해 특허청과 같은 특허 정보를 실시간으로 보여 줍니다.
       </p>
     </div>
+  );
+}
+
+/**
+ * "이 검색식은 이 발명에서 나왔어요" 줄.
+ *
+ * 학생은 맨땅에서 검색식을 만들지 않는다. 자기 아이디어와 비슷한 선배 발명을 골라
+ * 그 발명의 IPC 분류와 키워드를 빌려 쓴다. 무엇을 빌렸는지 화면에 남아 있어야
+ * 학생이 "이게 왜 이 분류지?" 하고 되짚어 볼 수 있다.
+ */
+function BasedOnBar({
+  basedOn,
+  onOpen,
+}: {
+  basedOn: NonNullable<PatentSnapshot["basedOn"]>;
+  onOpen?: () => void;
+}) {
+  const inner = (
+    <>
+      <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
+        {basedOn.drawingUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={basedOn.drawingUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <ImageIcon className="size-4 text-neutral-300" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] text-neutral-400">이 선배 발명을 바탕으로 만든 검색식</p>
+        <p className="truncate text-sm font-semibold">{basedOn.title}</p>
+      </div>
+      {basedOn.ipc && (
+        <span className="shrink-0 rounded-full bg-white px-2 py-0.5 font-mono text-[11px] text-neutral-600 ring-1 ring-line">
+          IPC {basedOn.ipc}
+        </span>
+      )}
+    </>
+  );
+
+  if (!onOpen) {
+    return (
+      <div className="flex shrink-0 items-center gap-3 border-b border-line bg-neutral-50 px-5 py-2.5">
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title="이 발명 다시 보기"
+      className="flex shrink-0 items-center gap-3 border-b border-line bg-neutral-50 px-5 py-2.5 text-left transition-colors hover:bg-neutral-100"
+    >
+      {inner}
+      <ChevronRight className="size-4 shrink-0 text-neutral-300" />
+    </button>
   );
 }
 

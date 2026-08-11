@@ -35,12 +35,28 @@ export interface StageDefinition {
   /** 학생에게 보여줄 완료 조건 (진행판 툴팁) */
   doneWhen: string;
   /** complete_stage 산출물 검증 — 통과하지 못하면 승급하지 않는다 */
-  validate: (artifact: unknown) => ValidationResult;
+  validate: (artifact: unknown, evidence: StageEvidence) => ValidationResult;
 }
 
 export type ValidationResult =
   | { ok: true }
   | { ok: false; missing: string[]; hint: string };
+
+/**
+ * 프로그램이 실제로 관측한 사실 — AI의 주장이 아니다.
+ *
+ * 산출물만 보고 판정하면, AI가 특허를 한 번도 조회하지 않고도 그럴듯한 검색식과
+ * 특허 이름을 적어 내 단계를 끝낼 수 있다(실제로 그렇게 넘어가는 것을 확인했다).
+ * 그래서 5단계는 "정말 찾아봤는가"를 여기 담긴 사실로 판정한다. (아키텍처 원칙 2·4)
+ */
+export interface StageEvidence {
+  /** 실제로 조회를 마친 KIPRIS 검색식 (조회 전이면 null) */
+  kiprisQuery: string | null;
+  /** 그 조회로 프로그램이 센 전체 건수 (조회 전이면 -1) */
+  kiprisTotal: number;
+}
+
+export const NO_EVIDENCE: StageEvidence = { kiprisQuery: null, kiprisTotal: -1 };
 
 // ── 검증 헬퍼 ────────────────────────────────────────────────
 
@@ -204,15 +220,60 @@ export const STAGES: Record<StageId, StageDefinition> = {
   검색 결과에 없는 특허를 지어내지 않는다.
 - "무조건 등록됩니다" 같은 확답은 하지 않는다. "가능성이 있습니다"처럼 표현한다.
 - 유사 특허와 우리 아이디어의 차별점(differentiation)이 정리되면 complete_stage를 호출한다.`,
-    validate: (artifact) => {
+    validate: (artifact, evidence) => {
       const a = asRecord(artifact);
+
+      // 조회한 적이 없으면 무엇을 적어 내든 통과시키지 않는다.
+      // AI가 대화에서 본 적 있는 검색식을 기억해 적어 내는 일이 실제로 있었다.
+      if (!evidence.kiprisQuery) {
+        return {
+          ok: false,
+          missing: ["실제 특허 조회"],
+          hint:
+            "아직 특허를 한 번도 조회하지 않았습니다. 비슷한 선배 발명을 골라 " +
+            "generate_kipris_query 로 검색식을 만들고, search_kipris 로 실제 조회한 뒤에 " +
+            "완료를 신청하세요. 조회하지 않은 특허를 지어내면 안 됩니다.",
+        };
+      }
+
+      const claimed = typeof a.kiprisQuery === "string" ? a.kiprisQuery.trim() : "";
+      if (claimed !== evidence.kiprisQuery) {
+        return {
+          ok: false,
+          missing: ["kiprisQuery"],
+          hint:
+            "kiprisQuery 는 실제로 조회한 검색식과 똑같아야 합니다: " +
+            `${evidence.kiprisQuery}`,
+        };
+      }
+
+      const similar = Array.isArray(a.similarPatents)
+        ? a.similarPatents.filter((item) => text(item, 1))
+        : [];
+
+      if (evidence.kiprisTotal === 0 && similar.length > 0) {
+        return {
+          ok: false,
+          missing: ["similarPatents"],
+          hint:
+            "조회 결과가 0건이었습니다. 나오지 않은 특허를 적을 수 없습니다. " +
+            "빈 목록으로 두거나, 검색식을 넓혀 다시 조회하세요.",
+        };
+      }
+      if (evidence.kiprisTotal > 0 && similar.length === 0) {
+        return {
+          ok: false,
+          missing: ["similarPatents"],
+          hint:
+            "조회 결과에 특허가 있었습니다. 그중 우리 아이디어와 비슷한 것을 " +
+            "최소 1건 적어 주세요 (조회 목록에 나온 제목만).",
+        };
+      }
+
       return check(
         artifact,
-        [
-          ["kiprisQuery", text(a.kiprisQuery, 2)],
-          ["differentiation", text(a.differentiation, 10)],
-        ],
-        "검색식과 '기존 특허와 무엇이 다른지'가 있어야 발명노트를 완성할 수 있어요.",
+        [["differentiation", text(a.differentiation, 10)]],
+        "'기존 특허와 무엇이 다른지'가 있어야 발명노트를 완성할 수 있어요.",
       );
     },
   },
@@ -265,6 +326,8 @@ export function advanceStage(
   stage: StageId,
   artifact: unknown,
   now: number = Date.now(),
+  /** 프로그램이 실제로 관측한 사실. 안 주면 "아무것도 안 해 봤다"로 본다. */
+  evidence: StageEvidence = NO_EVIDENCE,
 ): AdvanceResult {
   const stay = (message: string): AdvanceResult => ({
     ok: false,
@@ -282,7 +345,7 @@ export function advanceStage(
     );
   }
 
-  const result = STAGES[stage].validate(artifact);
+  const result = STAGES[stage].validate(artifact, evidence);
   if (!result.ok) {
     const retried = { ...state.retries, [stage]: (state.retries[stage] ?? 0) + 1 };
     return {

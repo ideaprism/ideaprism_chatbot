@@ -43,7 +43,9 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
       "선배들의 발명 사례를 키워드로 검색한다. 검색 결과는 우측 패널에 자동으로 표시되고, " +
       "최대 500건이 브라우저 메모리에 적재된다. 학생이 어떤 주제를 꺼냈을 때, 또는 " +
       "'비슷한 발명 있어?'라고 물었을 때 사용한다. 돌려받는 건수와 통계만 근거로 말하고, " +
-      "숫자를 임의로 지어내지 않는다.",
+      "숫자를 임의로 지어내지 않는다. " +
+      "결과에는 화면 앞쪽 발명들의 id와 제목이 함께 온다 — id가 필요한 도구는 " +
+      "그 목록에서 고른다. 학생에게 id를 물어보지 않는다(학생 화면에는 id가 없다).",
     parameters: {
       type: "object",
       properties: {
@@ -118,9 +120,15 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
   generate_kipris_query: {
     name: "generate_kipris_query",
     description:
-      "KIPRIS(특허청) 검색식을 만든다. 5단계 선행기술조사에서 사용한다. " +
-      "너는 낱말만 갈래별로 고르고, 검색식 문법(+, *, 괄호)은 프로그램이 조립한다. " +
-      "같은 갈래 안에는 비슷한 말(동의어)을 함께 넣는다. 예: object=['우산','양산']. " +
+      "KIPRIS(특허청) 검색식을 만든다. 5단계 선행기술조사에서 사용한다.\n" +
+      "학생은 특허 분류(IPC)를 고를 줄도, 특허 검색어를 지을 줄도 모른다. " +
+      "그래서 맨땅에서 만들지 않는다: 먼저 search_inventions 로 학생 아이디어와 " +
+      "비슷한 선배 발명을 찾아 학생과 함께 하나를 고르고, 그 발명의 id를 " +
+      "basedOnInventionId 로 넘긴다. 그 발명에 붙어 있는 IPC 분류와 미리 정리된 " +
+      "키워드가 '기초 검색식'이 되고, 학생 아이디어에 맞게 바꿀 갈래만 네가 적어 주면 " +
+      "그 갈래만 갈아 끼워진다.\n" +
+      "검색식 문법(+, *, 괄호)과 IPC 분류는 프로그램이 다룬다 — 직접 쓰지 않는다. " +
+      "같은 갈래 안에는 비슷한 말(동의어)을 함께 넣는다. 예: object=['우산','양산'].\n" +
       "다섯 갈래를 다 채워도 좋다. 다만 처음 검색식에는 '발명 대상'과 '해결 수단'만 " +
       "들어가고, 나머지는 우측 패널에 남아 학생이 필요할 때 켤 수 있다 — " +
       "갈래를 다 곱하면 0건이 되는 일이 잦기 때문이다. " +
@@ -128,10 +136,21 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
     parameters: {
       type: "object",
       properties: {
+        basedOnInventionId: {
+          type: "string",
+          description:
+            "기초로 삼을 선배 발명의 id — 학생 아이디어와 가장 비슷하다고 함께 고른 것. " +
+            "search_inventions 결과에 함께 온 목록의 id를 그대로 쓴다(지어내지 않는다). " +
+            "학생에게 id를 물어보지 않는다 — 학생 화면에는 id가 보이지 않는다. " +
+            "학생은 제목으로 고르고, 그 제목에 해당하는 id를 네가 목록에서 찾아 넣는다. " +
+            "이 발명의 IPC 분류와 정리된 키워드가 기초 검색식이 된다.",
+        },
         object: {
           type: "array",
           items: { type: "string" },
-          description: "발명 대상 — 무엇에 관한 발명인가. 예: ['우산','양산']",
+          description:
+            "발명 대상 — 학생 아이디어가 무엇에 관한 것인가. 예: ['우산','양산'] " +
+            "(비우면 기초 발명의 낱말을 그대로 쓴다)",
         },
         problem: {
           type: "array",
@@ -153,15 +172,10 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
           items: { type: "string" },
           description: "효과 (선택)",
         },
-        ipc: {
-          type: "string",
-          description:
-            "IPC 분류 코드 4자리 (선택). 예: 우산 'A45B', 청소도구 'A47L', 분무기 'B05B'. " +
-            "분류가 맞으면 엉뚱한 분야의 특허가 걸러진다. " +
-            "확실하지 않으면 넣지 않는다 — 없는 코드를 적으면 프로그램이 버리고 알려 준다.",
-        },
       },
-      required: ["object"],
+      // 기초 발명 없이는 검색식을 만들지 않는다 — 분류 없이 낱말로만 찾으면
+      // 엉뚱한 분야의 특허가 잔뜩 섞인다 (실측: 분류 없이 1만 건 넘게 나왔다)
+      required: ["basedOnInventionId"],
       additionalProperties: false,
     },
   },
@@ -247,7 +261,16 @@ const STAGE_TOOLS: Record<StageId, ToolName[]> = {
   2: ["search_inventions", "apply_filters", "get_statistics", "update_note", "complete_stage"],
   3: ["search_inventions", "apply_filters", "get_statistics", "show_invention", "update_note", "complete_stage"],
   4: ["update_note", "complete_stage"],
-  5: ["generate_kipris_query", "search_kipris", "update_note", "complete_stage"],
+  // 5단계도 발명 검색이 필요하다 — 기초 검색식으로 삼을 비슷한 선배 발명을 먼저 골라야 한다
+  5: [
+    "search_inventions",
+    "apply_filters",
+    "show_invention",
+    "generate_kipris_query",
+    "search_kipris",
+    "update_note",
+    "complete_stage",
+  ],
 };
 
 /**

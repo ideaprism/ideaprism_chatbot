@@ -76,19 +76,118 @@ test("3단계: SCAMPER 기법 1개만으로는 승급하지 않는다", () => {
   assert.equal(pass.nextStage, 4);
 });
 
+/** 프로그램이 실제로 조회를 마친 상태 */
+const SEARCHED = { kiprisQuery: "우산*빗물", kiprisTotal: 12 };
+
 test("5단계 완주 후에는 더 올라가지 않는다", () => {
   const state = { ...initialQuestState(0), currentStage: 5 as const };
   const result = advanceStage(
     state,
     5,
-    { kiprisQuery: "우산*빗물", similarPatents: [], differentiation: "기존과 달리 물받이가 접힌다" },
+    {
+      kiprisQuery: "우산*빗물",
+      similarPatents: ["우산 빗물 제거장치"],
+      differentiation: "기존과 달리 물받이가 접힌다",
+    },
     0,
+    SEARCHED,
   );
 
   assert.equal(result.ok, true);
   assert.equal(result.state.currentStage, 5);
   assert.equal(result.characterChanged, false);
   assert.ok(result.state.completed[5]);
+});
+
+// ── 5단계: 지어낸 선행기술조사 차단 ──────────────────────────
+//
+// 산출물만 보고 판정하면, AI가 특허를 한 번도 조회하지 않고도 그럴듯한 검색식과
+// 특허 이름을 적어 내 단계를 끝낼 수 있다. 실제로 그렇게 넘어가는 것을 확인했다.
+
+test("특허를 한 번도 조회하지 않았으면 완료할 수 없다", () => {
+  const state = { ...initialQuestState(0), currentStage: 5 as const };
+  const result = advanceStage(
+    state,
+    5,
+    {
+      kiprisQuery: "우산*빗물",
+      similarPatents: ["그럴듯한 특허 이름"],
+      differentiation: "기존과 달리 물받이가 접힌다",
+    },
+    0,
+    // evidence 없음 = 프로그램이 조회한 적 없음
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.state.currentStage, 5);
+  assert.ok(result.message.includes("조회"), result.message);
+});
+
+test("실제로 조회한 검색식과 다른 검색식을 적어 내면 막는다", () => {
+  const state = { ...initialQuestState(0), currentStage: 5 as const };
+  const result = advanceStage(
+    state,
+    5,
+    {
+      kiprisQuery: "IPC=[A45B]*우산*커버",
+      similarPatents: ["우산 빗물 제거장치"],
+      differentiation: "기존과 달리 물받이가 접힌다",
+    },
+    0,
+    SEARCHED,
+  );
+
+  assert.equal(result.ok, false);
+  assert.ok(result.message.includes("우산*빗물"), result.message);
+});
+
+test("0건이 나왔는데 비슷한 특허를 적으면 막는다", () => {
+  const state = { ...initialQuestState(0), currentStage: 5 as const };
+  const result = advanceStage(
+    state,
+    5,
+    {
+      kiprisQuery: "우산*빗물",
+      similarPatents: ["어디선가 본 특허"],
+      differentiation: "기존과 달리 물받이가 접힌다",
+    },
+    0,
+    { kiprisQuery: "우산*빗물", kiprisTotal: 0 },
+  );
+
+  assert.equal(result.ok, false);
+  assert.ok(result.message.includes("0건"), result.message);
+});
+
+test("0건이면 비슷한 특허를 비워 두고 완료할 수 있다", () => {
+  const state = { ...initialQuestState(0), currentStage: 5 as const };
+  const result = advanceStage(
+    state,
+    5,
+    {
+      kiprisQuery: "우산*빗물",
+      similarPatents: [],
+      differentiation: "기존과 달리 물받이가 접힌다",
+    },
+    0,
+    { kiprisQuery: "우산*빗물", kiprisTotal: 0 },
+  );
+
+  assert.equal(result.ok, true, result.message);
+});
+
+test("특허가 나왔는데 한 건도 안 적으면 막는다", () => {
+  const state = { ...initialQuestState(0), currentStage: 5 as const };
+  const result = advanceStage(
+    state,
+    5,
+    { kiprisQuery: "우산*빗물", similarPatents: [], differentiation: "기존과 달리 접힌다" },
+    0,
+    SEARCHED,
+  );
+
+  assert.equal(result.ok, false);
+  assert.ok(result.message.includes("similarPatents"), result.message);
 });
 
 test("0단계부터 5단계까지 완주하면 캐릭터가 두 번 바뀐다", () => {
@@ -118,7 +217,11 @@ test("0단계부터 5단계까지 완주하면 캐릭터가 두 번 바뀐다", 
   const handoffs: Array<{ at: number; to: string }> = [];
 
   for (const stage of [0, 1, 2, 3, 4, 5] as const) {
-    const result = advanceStage(state, stage, artifacts[stage], 0);
+    // 5단계는 프로그램이 실제로 조회를 마쳤을 때만 통과한다
+    const result = advanceStage(state, stage, artifacts[stage], 0, {
+      kiprisQuery: "우산*빗물*받이",
+      kiprisTotal: 7,
+    });
     assert.equal(result.ok, true, `${stage}단계 승급 실패: ${result.message}`);
     if (result.characterChanged) handoffs.push({ at: stage, to: result.nextCharacter });
     state = result.state;

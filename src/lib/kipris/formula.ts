@@ -46,6 +46,21 @@ export function filledGroups(
   return groups.filter((key) => (parts[key]?.length ?? 0) > 0);
 }
 
+/**
+ * 기초 검색식(선배 발명에서 빌려 온 것) 위에 학생 아이디어의 낱말을 덮어쓴다.
+ *
+ * 학생은 맨땅에서 시작하지 않는다. 자기 아이디어와 비슷한 선배 발명을 골라
+ * 그 발명의 IPC 분류와 정리된 키워드를 밑바탕으로 깔고, 자기 것으로 바꿀 갈래만
+ * 갈아 끼운다. 그래서 낱말을 준 갈래만 바뀌고 나머지는 기초가 그대로 남는다.
+ */
+export function overlayGroups(base: QueryParts, over: QueryParts): QueryParts {
+  const merged: QueryParts = { object: [], ipc: over.ipc ?? base.ipc };
+  for (const key of GROUP_KEYS) {
+    merged[key] = (over[key]?.length ? over[key] : base[key]) ?? [];
+  }
+  return merged;
+}
+
 /** KIPRIS 검색식에서 뜻이 있는 기호는 낱말에 그대로 두면 식이 깨진다 */
 function cleanTerm(term: string): string {
   return term

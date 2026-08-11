@@ -18,12 +18,21 @@ import {
   DEFAULT_GROUPS,
   filledGroups,
   GROUP_KEYS,
+  overlayGroups,
   pickGroups,
   type GroupKey,
 } from "./kipris/formula";
 import { lookupIpc } from "./kipris/ipc";
+import { fetchInventionKeywords } from "./kipris/keywords";
 import { KiprisError, searchKipris } from "./kipris/service";
-import { advanceStage, STAGES, STAGE_IDS, type StageId } from "./quest";
+import {
+  advanceStage,
+  NO_EVIDENCE,
+  STAGES,
+  STAGE_IDS,
+  type StageEvidence,
+  type StageId,
+} from "./quest";
 import {
   availableValues,
   describeStats,
@@ -117,6 +126,43 @@ function statsFor(
       grades,
     ),
   };
+}
+
+/** 화면 맨 앞에 보이는 발명 몇 건 — AI가 id로 가리킬 수 있게 목록으로 준다 */
+const LISTED_ROWS = 12;
+
+/**
+ * AI에게 주는 발명 목록.
+ *
+ * 이걸 안 주면 AI는 화면에 무엇이 떠 있는지 모른 채 통계만 읊게 되고,
+ * show_invention·generate_kipris_query 처럼 id가 필요한 도구를 쓸 수가 없다
+ * (실제로 학생에게 "id를 알려 줘"라고 되묻는 일이 있었다).
+ */
+function describeRows(rows: InventionRow[], grades: LookupItem[]): string {
+  if (rows.length === 0) return "";
+
+  const name = (row: InventionRow) =>
+    row.grade_id != null
+      ? (grades.find((g) => g.id === row.grade_id)?.name ?? "학년 미상")
+      : "학년 미상";
+
+  const lines = rows.slice(0, LISTED_ROWS).map((row) => {
+    const title = row.simple_title ?? row.original_title ?? "(제목 없음)";
+    const summary = row.simple_summary?.replace(/\s+/g, " ").slice(0, 60) ?? "";
+    return `- id=${row.id} | ${title} | ${name(row)}${summary ? ` | ${summary}` : ""}`;
+  });
+
+  return [
+    `지금 화면 맨 앞에 보이는 발명 ${lines.length}건 ` +
+      `(id가 필요한 도구는 반드시 이 목록의 id를 쓴다):`,
+    ...lines,
+    rows.length > lines.length
+      ? `…그 밖에 ${rows.length - lines.length}건이 더 있습니다. ` +
+        "다른 것이 필요하면 필터를 걸거나 검색어를 바꾸세요."
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function describeChoices(snapshot: SearchSnapshot): string {
@@ -273,10 +319,16 @@ export async function executeTool(
       };
 
       const next: SessionState = { ...session, search: snapshot };
-      const { text } = statsFor(snapshot, found);
+      const { filtered, text } = statsFor(snapshot, found);
 
       return {
-        result: `${text}\n\n${describeChoices(snapshot)}`,
+        result: [
+          text,
+          describeRows(filtered, found.grades),
+          describeChoices(snapshot),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         session: next,
         events: [
           {
@@ -355,7 +407,14 @@ export async function executeTool(
       }
 
       return {
-        result: [text, describeChoices(nextSnapshot), ...notes].join("\n\n"),
+        result: [
+          text,
+          describeRows(filtered, loaded.grades),
+          describeChoices(nextSnapshot),
+          ...notes,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         session: next,
         events: [{ type: "state", session: next }],
         isError: false,
@@ -374,7 +433,10 @@ export async function executeTool(
           true,
         );
       }
-      return keep(statsFor(snapshot, loaded).text);
+      const stats = statsFor(snapshot, loaded);
+      return keep(
+        [stats.text, describeRows(stats.filtered, loaded.grades)].filter(Boolean).join("\n\n"),
+      );
     }
 
     case "show_invention": {
@@ -415,19 +477,74 @@ export async function executeTool(
 
     // ── 특허 ────────────────────────────────────────────────
     case "generate_kipris_query": {
-      // IPC는 표에 있는 코드만 쓴다 — AI가 지어낸 분류가 들어가면 검색식이 통째로 빗나간다
-      const wantedIpc = typeof args.ipc === "string" ? args.ipc.trim().toUpperCase() : "";
-      const ipcMeaning = wantedIpc ? await lookupIpc(wantedIpc) : null;
-      const ipc = ipcMeaning ? wantedIpc : undefined;
+      const basedOnId =
+        typeof args.basedOnInventionId === "string" ? args.basedOnInventionId.trim() : "";
 
-      const parts: QueryParts = {
+      // ── 기초 검색식: 학생이 고른 선배 발명에서 빌려 온다 ──────────────
+      // 학생은 IPC 분류를 고를 줄 모른다. 비슷한 발명에 이미 붙어 있는 분류와
+      // 정리된 키워드를 밑바탕으로 깔아 주는 것이 IdeaPrism이 하는 일이다.
+      // 이 절차는 지침이 아니라 여기서 막는다 — 분류 없이 낱말로만 찾으면
+      // 엉뚱한 분야의 특허가 잔뜩 섞인다.
+      if (!basedOnId) {
+        return keep(
+          "기초로 삼을 선배 발명을 먼저 골라야 검색식을 만들 수 있습니다.\n" +
+            "학생은 특허 분류(IPC)를 고를 줄 모릅니다. 그래서 IdeaPrism은 비슷한 선배 발명에 " +
+            "이미 붙어 있는 분류와 키워드를 빌려 씁니다.\n" +
+            "1) search_inventions 로 학생 아이디어와 비슷한 발명을 찾고\n" +
+            "2) 학생에게 '어느 게 네 아이디어와 가장 비슷해?'라고 물어 하나를 고른 뒤\n" +
+            "3) 그 발명의 id를 basedOnInventionId 로 넣어 다시 부르세요.",
+          true,
+        );
+      }
+
+      const loaded = await loadSearch(session);
+      const row = loaded?.rows.find((item) => item.id === basedOnId);
+
+      if (!row) {
+        const samples = loaded?.rows.slice(0, 5).map((item) => item.id).join(", ");
+        return keep(
+          `그 id(${basedOnId})는 지금 검색 결과 목록에 없습니다. ` +
+            (samples
+              ? `목록에 있는 id 예시: ${samples}. 없는 id를 지어내지 마세요.`
+              : "먼저 search_inventions 로 비슷한 발명을 찾은 뒤 그중에서 고르세요."),
+          true,
+        );
+      }
+
+      const keywords = await fetchInventionKeywords(row.id);
+      const base: QueryParts = keywords ? { ...keywords.simple } : { object: [] };
+
+      // IPC는 발명 자료에 적힌 코드를 쓴다 (뜻은 분류표에서 확인)
+      const code = row.ipc?.trim().toUpperCase() ?? "";
+      const meaning = code ? await lookupIpc(code) : null;
+      if (code) base.ipc = code;
+
+      const basedOn: PatentSnapshot["basedOn"] = {
+        id: row.id,
+        title: row.simple_title || row.original_title || "(제목 없음)",
+        ipc: code || null,
+        drawingUrl: row.drawing_url,
+      };
+
+      const baseNote = [
+        `기초로 삼은 선배 발명: ${basedOn.title}`,
+        code
+          ? `- IPC 분류: ${code}${meaning ? ` (${meaning})` : ""}`
+          : "- IPC 분류: 이 발명 자료에는 없습니다. 분류 없이 낱말로만 찾게 되니, " +
+            "결과가 엉뚱하면 IPC가 적힌 다른 비슷한 발명으로 바꿔 보자고 제안하세요.",
+        keywords
+          ? "- 이 발명에 정리된 키워드를 밑바탕으로 깔았습니다."
+          : "- 이 발명에는 정리된 키워드가 없어 네가 준 낱말만 썼습니다.",
+      ].join("\n");
+
+      // AI가 낱말을 준 갈래만 학생 아이디어 것으로 갈아 끼운다
+      const parts = overlayGroups(base, {
         object: asStringArray(args.object) ?? [],
         problem: asStringArray(args.problem),
         solution: asStringArray(args.solution),
         method: asStringArray(args.method),
         effect: asStringArray(args.effect),
-        ipc,
-      };
+      });
 
       // 1.0과 같은 기준 — 처음에는 대상·해결수단만 넣는다.
       // 다섯 갈래를 다 곱하면 0건이 되는 일이 잦다 (formula.ts 의 DEFAULT_GROUPS).
@@ -436,8 +553,8 @@ export async function executeTool(
 
       if (!built.query) {
         return keep(
-          built.advice ??
-            "검색식을 만들지 못했습니다. 최소한 '발명 대상' 낱말은 넣어야 합니다.",
+          "검색식을 만들지 못했습니다. 고른 발명에 정리된 키워드가 없으니 " +
+            "학생 아이디어에서 '발명 대상(object)' 낱말이라도 뽑아 함께 넣어 주세요.",
           true,
         );
       }
@@ -450,20 +567,14 @@ export async function executeTool(
         loadedCount: 0,
         parts,
         activeGroups,
+        basedOn,
       };
       const next: SessionState = { ...session, patent: nextSnapshot };
-
-      const ipcNote = ipc
-        ? `IPC ${ipc} = ${ipcMeaning}`
-        : wantedIpc
-          ? `※ IPC 코드 "${wantedIpc}" 는 분류표에 없어서 검색식에서 뺐습니다. ` +
-            "학생에게는 분류 없이 낱말로만 찾는다고 말하고, 없는 코드를 지어내지 마세요."
-          : null;
 
       return {
         result: [
           describeFormula(built),
-          ipcNote,
+          baseNote,
           describeReserved(parts, activeGroups),
           "이 검색식으로 조회하려면 search_kipris를 호출하세요.",
         ]
@@ -506,9 +617,10 @@ export async function executeTool(
         query,
         totalCount: found.totalCount,
         loadedCount: found.patents.length,
-        // 검색식이 세션의 것 그대로이므로 갈래 낱말도 그대로 이어 간다
+        // 검색식이 세션의 것 그대로이므로 갈래 낱말·기초 발명도 그대로 이어 간다
         parts: session.patent?.parts,
         activeGroups: session.patent?.activeGroups,
+        basedOn: session.patent?.basedOn,
         page: found.page,
       };
       const next: SessionState = { ...session, patent: nextSnapshot };
@@ -564,7 +676,15 @@ export async function executeTool(
 
       // 승급 전 담당 캐릭터 — 배턴터치 연출에서 "누가 떠나는지" 표시에 쓴다
       const from = STAGES[session.quest.currentStage].character;
-      const outcome = advanceStage(session.quest, stage, args.artifact);
+
+      // AI의 주장이 아니라 프로그램이 실제로 한 일을 넘긴다 (아키텍처 원칙 4).
+      // 5단계는 이걸로 "특허를 정말 조회했는가"를 판정한다.
+      const evidence: StageEvidence =
+        session.patent && session.patent.totalCount >= 0
+          ? { kiprisQuery: session.patent.query, kiprisTotal: session.patent.totalCount }
+          : NO_EVIDENCE;
+
+      const outcome = advanceStage(session.quest, stage, args.artifact, Date.now(), evidence);
 
       if (!outcome.ok) {
         // 실패해도 재시도 횟수는 올라간다 (막힘 신호 기록)

@@ -70,6 +70,15 @@ export default function Home() {
         seed={null}
         patents={patents}
         onResult={applyPatentResult}
+        // 기초로 삼은 발명을 다시 열어 준다 (결과가 메모리에 남아 있을 때만)
+        onOpenInvention={
+          canSearch
+            ? (id) => {
+                focusInvention(id);
+                setActivePanel("search");
+              }
+            : undefined
+        }
       />
     ) : undefined;
 

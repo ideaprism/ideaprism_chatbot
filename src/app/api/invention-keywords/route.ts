@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { hasKeywords, parseOpsmeKeywords } from "@/lib/kipris/opsme";
-import { supabaseRead } from "@/lib/supabase";
+import { fetchInventionKeywords } from "@/lib/kipris/keywords";
 
 /**
  * 선배 발명 1건에 미리 정리돼 있는 특허 검색 키워드(OPSME) 조회.
@@ -16,24 +15,12 @@ export async function GET(request: Request) {
   const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
   if (!id) return NextResponse.json({ error: "발명 id가 필요합니다." }, { status: 400 });
 
-  try {
-    const { data } = await supabaseRead()
-      .from("kipris_search_keywords")
-      .select("kipris_search_keywords")
-      .eq("invention_id", id)
-      .maybeSingle();
+  const parsed = await fetchInventionKeywords(id);
 
-    const raw = (data as { kipris_search_keywords?: string } | null)?.kipris_search_keywords;
-    const parsed = parseOpsmeKeywords(raw);
-
-    return NextResponse.json({
-      found: hasKeywords(parsed.simple) || hasKeywords(parsed.expert),
-      simple: parsed.simple,
-      expert: parsed.expert,
-      completeness: parsed.completeness ?? null,
-    });
-  } catch {
-    // 표가 없거나 조회에 실패해도 특허 검색 자체는 계속할 수 있어야 한다
-    return NextResponse.json({ found: false, simple: null, expert: null, completeness: null });
-  }
+  return NextResponse.json({
+    found: Boolean(parsed),
+    simple: parsed?.simple ?? null,
+    expert: parsed?.expert ?? null,
+    completeness: parsed?.completeness ?? null,
+  });
 }

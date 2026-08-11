@@ -13,6 +13,7 @@ import {
   DEFAULT_GROUPS,
   describeFormula,
   filledGroups,
+  overlayGroups,
   pickGroups,
 } from "../src/lib/kipris/formula";
 
@@ -112,6 +113,53 @@ test("꺼 둔 갈래의 낱말은 버리지 않는다 (화면에서 켤 수 있�
 test("낱말이 빈 갈래는 켜진 것으로 세지 않는다", () => {
   const parts = { object: ["우산"], solution: [] };
   assert.deepEqual(filledGroups(parts, DEFAULT_GROUPS), ["object"]);
+});
+
+// ── 기초 검색식 위에 학생 낱말 덮어쓰기 ──────────────────────
+//
+// 학생은 IPC 분류를 고를 줄 모른다. 비슷한 선배 발명의 분류·키워드를 밑바탕으로
+// 깔고, 자기 것으로 바꿀 갈래만 갈아 끼운다.
+
+const BASE = {
+  object: ["우산꽂이"],
+  problem: ["공간부족"],
+  solution: ["경첩"],
+  method: ["접이식"],
+  effect: ["공간절약"],
+  ipc: "A45B",
+};
+
+test("낱말을 준 갈래만 학생 것으로 바뀐다", () => {
+  const merged = overlayGroups(BASE, { object: ["우산 커버"], solution: ["흡수재"] });
+  assert.deepEqual(merged.object, ["우산 커버"]);
+  assert.deepEqual(merged.solution, ["흡수재"]);
+});
+
+test("안 준 갈래는 기초 발명의 낱말이 남는다", () => {
+  const merged = overlayGroups(BASE, { object: ["우산 커버"] });
+  assert.deepEqual(merged.problem, ["공간부족"]);
+  assert.deepEqual(merged.method, ["접이식"]);
+  assert.deepEqual(merged.effect, ["공간절약"]);
+});
+
+test("IPC 분류는 기초 발명에서 따라온다 (학생·AI가 고르지 않는다)", () => {
+  const merged = overlayGroups(BASE, { object: ["우산 커버"] });
+  assert.equal(merged.ipc, "A45B");
+
+  const { query } = buildKiprisQuery(pickGroups(merged, DEFAULT_GROUPS));
+  assert.equal(query, "IPC=[A45B]*우산 커버*경첩");
+});
+
+test("빈 배열은 '안 준 것'으로 본다 (기초를 지우지 않는다)", () => {
+  const merged = overlayGroups(BASE, { object: [], problem: [] });
+  assert.deepEqual(merged.object, ["우산꽂이"]);
+  assert.deepEqual(merged.problem, ["공간부족"]);
+});
+
+test("기초가 없으면 학생 낱말만 남는다", () => {
+  const merged = overlayGroups({ object: [] }, { object: ["우산"], solution: ["흡수"] });
+  assert.equal(buildKiprisQuery(pickGroups(merged, DEFAULT_GROUPS)).query, "우산*흡수");
+  assert.equal(merged.ipc, undefined);
 });
 
 test("설명에 검색식과 구성이 함께 들어간다", () => {

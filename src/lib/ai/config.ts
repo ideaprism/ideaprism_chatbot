@@ -65,8 +65,14 @@ export const CHAT_EFFORT: AiEffort = "medium";
  */
 export const MAX_OUTPUT_TOKENS = 4000;
 
-/** 한 턴 안에서 도구를 연달아 호출할 수 있는 최대 횟수 (무한 루프 방지) */
-export const MAX_TOOL_ROUNDS = 6;
+/**
+ * 한 턴 안에서 도구를 연달아 호출할 수 있는 최대 횟수 (무한 루프 방지).
+ *
+ * 5단계가 가장 길다: 선배 발명 검색 → (한 번 더 좁혀 검색) → 검색식 만들기 →
+ * 특허 조회 → 노트 기록 → 마무리 말. 6이면 마지막 말을 못 하고 끊겨
+ * "자료를 찾다가 시간이 걸렸어"만 남는 일이 실제로 있었다.
+ */
+export const MAX_TOOL_ROUNDS = 8;
 
 /** 세션당 AI 호출 상한 (PRD 8장 비용 가드). 콘솔의 월 한도와 이중으로 건다. */
 export const MAX_AI_CALLS_PER_SESSION = Number(

@@ -44,6 +44,17 @@ export interface PatentSnapshot {
    * 다섯을 다 곱하면 0건이 되는 일이 잦아서다 (formula.ts 의 DEFAULT_GROUPS).
    */
   activeGroups?: string[];
+  /**
+   * 기초 검색식을 빌려 온 선배 발명.
+   * 학생은 IPC 분류를 고를 줄 모르니 비슷한 발명의 분류·키워드를 밑바탕으로 쓴다.
+   * 화면에도 "무엇을 바탕으로 만든 검색식인지" 남아 있어야 한다.
+   */
+  basedOn?: {
+    id: string;
+    title: string;
+    ipc: string | null;
+    drawingUrl: string | null;
+  };
   /** 지금 보고 있는 쪽 번호 (1부터) */
   page?: number;
 }

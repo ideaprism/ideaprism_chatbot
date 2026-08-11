@@ -367,7 +367,16 @@ export function useChat() {
       if (!current) return;
       syncSession({
         ...current,
-        patent: { query, totalCount, loadedCount: list.length, parts, activeGroups, page },
+        patent: {
+          query,
+          totalCount,
+          loadedCount: list.length,
+          parts,
+          activeGroups,
+          // 기초로 삼은 발명은 학생이 검색식을 고쳐도 그대로 남는다
+          basedOn: current.patent?.basedOn,
+          page,
+        },
       });
     },
     [syncSession],
