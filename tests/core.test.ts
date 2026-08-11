@@ -29,15 +29,26 @@ import {
   SESSION_OPENING_CUE,
 } from "../src/lib/prompt";
 import { mergeStageUsage, totalUsage } from "../src/lib/usage";
-import { DEFAULT_CAST, normalizeCast, parseCast, serializeCast } from "../src/lib/cast";
+import {
+  DEFAULT_CAST,
+  normalizeCast,
+  parseCast,
+  serializeCast,
+  withFriends,
+} from "../src/lib/cast";
 import {
   CHARACTER_IDS,
   CHARACTERS,
   charactersByGroup,
   emotionNames,
   normalizeEmotion,
+  type CharacterId,
 } from "../src/lib/characters";
-import { splitByEmotion } from "../src/lib/emotion";
+import {
+  splitSpeech,
+  type EmotionMark,
+  type SpeakerMark,
+} from "../src/lib/emotion";
 import { sanitizePersona } from "../src/lib/personas";
 
 // ── 1. 단계 승급 검증 ────────────────────────────────────────
@@ -57,7 +68,7 @@ test("0단계: 조건을 채우면 1단계로 오르고 캐릭터가 바뀐다",
   const result = advanceStage(
     state,
     0,
-    { nickname: "민준", interests: ["우산"], matchedCharacter: "jiyou" },
+    { nickname: "민준", interests: ["우산"], matchedFriends: ["daon", "harin"] },
     0,
   );
 
@@ -214,7 +225,7 @@ function afterStageZero() {
   return advanceStage(
     initialQuestState(0),
     0,
-    { nickname: "민준", interests: ["우산"], matchedCharacter: "jiyou" },
+    { nickname: "민준", interests: ["우산"], matchedFriends: ["daon", "harin"] },
     0,
   ).state;
 }
@@ -244,7 +255,7 @@ test("되돌아가 다시 정리하면 최종본이 바뀌고 앞서 적은 것�
   const again = advanceStage(
     back,
     0,
-    { nickname: "초코", interests: ["우산", "환경"], matchedCharacter: "jiyou" },
+    { nickname: "초코", interests: ["우산", "환경"], matchedFriends: ["daon", "harin"] },
     200,
   );
 
@@ -276,7 +287,7 @@ test("되돌아가 다시 완료해도 가 있던 자리는 내려가지 않는�
   const again = advanceStage(
     back,
     0,
-    { nickname: "초코", interests: ["우산"], matchedCharacter: "jiyou" },
+    { nickname: "초코", interests: ["우산"], matchedFriends: ["daon", "harin"] },
     200,
   );
 
@@ -287,7 +298,7 @@ test("되돌아가 다시 완료해도 가 있던 자리는 내려가지 않는�
 
 test("0단계부터 5단계까지 완주하면 캐릭터가 두 번 바뀐다", () => {
   const artifacts: Record<number, unknown> = {
-    0: { nickname: "민준", interests: ["우산"], matchedCharacter: "jiyou" },
+    0: { nickname: "민준", interests: ["우산"], matchedFriends: ["daon", "harin"] },
     1: { problemArea: "우산", observations: ["실내에 들어가면 바닥이 젖는다"] },
     2: {
       problemStatement: "비 오는 날 실내에서 우산의 빗물이 바닥을 적신다",
@@ -372,12 +383,58 @@ test("열 명 모두 감정 열 개와 쓸 수 있는 기본 감정을 갖는다
 });
 
 test("대화구조: 모르는 이름이 섞이면 그 단계만 공장 초기값으로 되돌린다", () => {
-  const messy = normalizeCast({ 0: "teacher", 1: "없는사람", 3: "coach" });
+  const messy = normalizeCast({
+    0: "teacher", // 옛 형태(사람 하나가 문자열)도 읽는다
+    1: "없는사람",
+    2: ["daon", "없는사람"], // 섞여 있으면 아는 사람만 남긴다
+    3: ["coach", "jiwon", "mia"], // 셋이 넘으면 둘까지만
+    4: ["daon", "daon"], // 같은 사람을 두 번 넣으면 한 명
+  });
 
-  assert.equal(messy[0], "teacher");
-  assert.equal(messy[1], DEFAULT_CAST[1], "모르는 이름은 공장 초기값으로");
-  assert.equal(messy[3], "coach", "제대로 된 이름은 그대로");
-  assert.equal(messy[5], DEFAULT_CAST[5], "빠진 단계도 공장 초기값으로");
+  assert.deepEqual(messy[0], ["teacher"]);
+  assert.deepEqual(messy[1], DEFAULT_CAST[1], "모르는 이름뿐이면 공장 초기값으로");
+  assert.deepEqual(messy[2], ["daon"], "아는 사람만 남는다");
+  assert.deepEqual(messy[3], ["coach", "jiwon"], "한 단계에 둘까지");
+  assert.deepEqual(messy[4], ["daon"], "같은 사람을 두 번 앉히지 않는다");
+  assert.deepEqual(messy[5], DEFAULT_CAST[5], "빠진 단계도 공장 초기값으로");
+});
+
+test("0단계에서 짝지어 준 친구 둘이 1~4단계에 앉는다", () => {
+  const seated = withFriends(DEFAULT_CAST, ["daon", "harin"]);
+
+  assert.deepEqual(seated[0], ["teacher"], "0단계는 선생님 그대로");
+  for (const stage of [1, 2, 3, 4] as const) {
+    assert.deepEqual(seated[stage], ["daon", "harin"], `${stage}단계에 둘이 앉는다`);
+  }
+  assert.deepEqual(seated[5], ["detective"], "5단계는 특허 탐정 그대로");
+
+  // 짝이 없거나 엉뚱하면 원래 배치를 건드리지 않는다
+  assert.deepEqual(withFriends(DEFAULT_CAST, undefined), DEFAULT_CAST);
+  assert.deepEqual(withFriends(DEFAULT_CAST, ["없는사람"]), DEFAULT_CAST);
+});
+
+test("0단계: 친구를 한 명만 적거나 선배가 아니면 넘어가지 못한다", () => {
+  const base = { nickname: "민준", interests: ["우산"] };
+  const tries: unknown[] = [
+    ["daon"], // 한 명
+    ["daon", "daon"], // 같은 사람 둘
+    ["teacher", "daon"], // 선생님은 친구가 아니다
+    ["detective", "coach"], // 전문가도 친구가 아니다
+    "daon", // 목록이 아님
+  ];
+
+  for (const matchedFriends of tries) {
+    const result = advanceStage(initialQuestState(0), 0, { ...base, matchedFriends }, 0);
+    assert.equal(result.ok, false, `통과하면 안 된다: ${JSON.stringify(matchedFriends)}`);
+  }
+
+  const ok = advanceStage(
+    initialQuestState(0),
+    0,
+    { ...base, matchedFriends: ["harin", "mia"] },
+    0,
+  );
+  assert.equal(ok.ok, true, "선배 두 명이면 통과한다");
 });
 
 test("대화구조: 깨진 글이 저장돼 있어도 대화가 멈추지 않는다", () => {
@@ -391,7 +448,7 @@ test("대화구조를 바꾸면 배턴터치가 일어나는 자리도 바뀐다
   const asIs = advanceStage(initialQuestState(0), 0, {
     nickname: "민준",
     interests: ["자전거"],
-    matchedCharacter: "jiyou",
+    matchedFriends: ["daon", "harin"],
   });
   assert.equal(asIs.ok, true);
   assert.equal(asIs.characterChanged, true);
@@ -402,7 +459,7 @@ test("대화구조를 바꾸면 배턴터치가 일어나는 자리도 바뀐다
   const changed = advanceStage(
     initialQuestState(0),
     0,
-    { nickname: "민준", interests: ["자전거"], matchedCharacter: "jiyou" },
+    { nickname: "민준", interests: ["자전거"], matchedFriends: ["daon", "harin"] },
     Date.now(),
     undefined,
     sameHand,
@@ -503,9 +560,30 @@ test("표식이 글 중간에 있으면 앞뒤 순서가 유지된다", () => {
   const parts = [...first.parts, ...rest.parts];
 
   assert.deepEqual(
-    parts.map((part) => (part.kind === "emotion" ? `<${part.emotion}>` : part.text)),
+    parts.map((part) =>
+      part.kind === "emotion"
+        ? `<${part.emotion}>`
+        : part.kind === "speaker"
+          ? `[${part.speaker}]`
+          : part.text,
+    ),
     ["먼저 이 말. ", "<found>", " 그다음 이 말."],
   );
+});
+
+test("[말:누구] 표식으로 화자가 바뀐다", () => {
+  const parser = createEmotionParser();
+  const out = parser.push("[말:daon] [감정:excited] 오 대박! [말:harin] [감정:caring] 천천히 해도 돼.");
+  const tail = parser.flush();
+  const parts = [...out.parts, ...tail.parts];
+
+  assert.deepEqual(
+    parts
+      .filter((part) => part.kind !== "text")
+      .map((part) => (part.kind === "speaker" ? `말:${part.speaker}` : `감정:${part.emotion}`)),
+    ["말:daon", "감정:excited", "말:harin", "감정:caring"],
+  );
+  assert.ok(!parts.some((part) => part.kind === "text" && part.text.includes("[말")));
 });
 
 // ── 2-1. 한 답변 안에서 그림이 바뀐다 ────────────────────────
@@ -514,35 +592,44 @@ test("표식이 글 중간에 있으면 앞뒤 순서가 유지된다", () => {
 // 시점의 글자 수를 그 감정이 시작되는 자리로 적어 둔다. 아래 relay 는 그 두 곳을
 // 합쳐 흉내 낸 것이다 — 화면이 몇 토막으로 나뉘는지가 여기서 결정된다.
 
-function relay(chunks: string[]) {
+function relay(chunks: string[], crew: CharacterId[] = ["jiyou"]) {
   const parser = createEmotionParser();
-  const marks: { at: number; emotion: string }[] = [];
+  const emotions: EmotionMark[] = [];
+  const speakers: SpeakerMark[] = [];
   let text = "";
+  let speaker = crew[0];
   let last: string | null = null;
 
   const take = (parsed: ReturnType<typeof parser.flush>) => {
     for (const part of parsed.parts) {
-      if (part.kind === "text") text += part.text;
-      else if (part.emotion !== last) {
+      if (part.kind === "text") {
+        text += part.text;
+      } else if (part.kind === "speaker") {
+        // 이 단계에 없는 사람은 버린다 (서버가 하는 일과 같다)
+        if (!crew.includes(part.speaker as CharacterId) || part.speaker === speaker) continue;
+        speaker = part.speaker as CharacterId;
+        last = null;
+        speakers.push({ at: text.length, character: speaker });
+      } else if (part.emotion !== last) {
         last = part.emotion;
-        marks.push({ at: text.length, emotion: part.emotion });
+        emotions.push({ at: text.length, emotion: part.emotion });
       }
     }
   };
 
   for (const chunk of chunks) take(parser.push(chunk));
   take(parser.flush());
-  return { text, marks };
+  return { text, emotions, speakers, character: crew[0] };
 }
 
 test("한 답변 안에서 감정이 바뀌면 그 자리에서 토막 난다", () => {
-  const { text, marks } = relay([
+  const out = relay([
     "[감정:confident] 안녕! 나는 지유야.\n\n",
     "[감정:realizing] 음… 그 문제 나도 겪어 봤어.\n\n",
     "[감정:playful] 그럼 이렇게 해 볼까?",
   ]);
 
-  const segments = splitByEmotion(text, marks, "confident");
+  const segments = splitSpeech(out.text, out);
 
   assert.deepEqual(
     segments.map((segment) => segment.emotion),
@@ -551,49 +638,92 @@ test("한 답변 안에서 감정이 바뀌면 그 자리에서 토막 난다", 
   assert.equal(segments[0].text, "안녕! 나는 지유야.");
   assert.equal(segments[1].text, "음… 그 문제 나도 겪어 봤어.");
   assert.equal(segments[2].text, "그럼 이렇게 해 볼까?");
+  assert.ok(segments.every((segment) => segment.character === "jiyou"));
+});
+
+test("둘이 함께 있으면 화자가 바뀌는 자리에서 토막 나고 얼굴도 바뀐다", () => {
+  const out = relay(
+    [
+      "[말:daon] [감정:excited] 오 대박! 그거 뜯어보면 어떨까?\n\n",
+      "[말:harin] [감정:caring] 근데 누가 쓸지부터 생각해 보자.",
+    ],
+    ["daon", "harin"],
+  );
+
+  const segments = splitSpeech(out.text, out);
+
+  assert.deepEqual(
+    segments.map((segment) => [segment.character, segment.emotion]),
+    [
+      ["daon", "excited"],
+      ["harin", "caring"],
+    ],
+  );
+  assert.equal(segments[0].text, "오 대박! 그거 뜯어보면 어떨까?");
+  assert.equal(segments[1].text, "근데 누가 쓸지부터 생각해 보자.");
+});
+
+test("이 단계에 없는 사람 이름은 버린다", () => {
+  // AI가 아무 이름이나 적어 내도 대화가 엉뚱한 사람에게 넘어가면 안 된다
+  const out = relay(["[말:mia] [감정:excited] 내가 말할게!"], ["daon", "harin"]);
+
+  assert.equal(out.speakers.length, 0);
+  assert.deepEqual(
+    splitSpeech(out.text, out).map((segment) => segment.character),
+    ["daon"],
+  );
 });
 
 test("같은 감정이 잇달아 나오면 토막을 쪼개지 않는다", () => {
-  const { text, marks } = relay(["[감정:proud] 잘했어! ", "[감정:proud] 정말로!"]);
+  const out = relay(["[감정:proud] 잘했어! ", "[감정:proud] 정말로!"]);
 
-  assert.equal(marks.length, 1);
-  assert.equal(splitByEmotion(text, marks, "proud").length, 1);
+  assert.equal(out.emotions.length, 1);
+  assert.equal(splitSpeech(out.text, out).length, 1);
 });
 
 test("감정 태그가 없으면 그림 한 장으로 그린다", () => {
-  const { text, marks } = relay(["오늘은 무슨 얘기 할까?"]);
+  const out = relay(["오늘은 무슨 얘기 할까?"], ["teacher"]);
 
-  assert.deepEqual(splitByEmotion(text, marks, "welcome"), [
-    { emotion: "welcome", text: "오늘은 무슨 얘기 할까?" },
+  assert.deepEqual(splitSpeech(out.text, out), [
+    { character: "teacher", emotion: "welcome", text: "오늘은 무슨 얘기 할까?" },
   ]);
 });
 
 test("대사가 아직 안 왔으면 그림도 내보내지 않는다", () => {
   // 감정 표식은 문단 맨 앞에 오므로 "표식은 왔는데 대사는 아직"인 순간이 반드시 생긴다.
   // 이때 그림을 그리면 얼굴이 먼저 뜨고 말이 뒤늦게 따라붙는다.
-  assert.deepEqual(splitByEmotion("", [{ at: 0, emotion: "thinking" }], "welcome"), []);
-  assert.deepEqual(splitByEmotion("", undefined, "welcome"), []);
+  assert.deepEqual(
+    splitSpeech("", { emotions: [{ at: 0, emotion: "thinking" }], character: "teacher" }),
+    [],
+  );
+  assert.deepEqual(splitSpeech("", { character: "teacher" }), []);
 });
 
 test("마지막 감정의 대사가 아직 안 왔으면 그 그림만 미룬다", () => {
   // 앞 토막은 이미 대사가 있으니 그대로 보이고, 새로 온 감정만 기다린다
-  const segments = splitByEmotion(
-    "찾아볼게.",
-    [
+  const segments = splitSpeech("찾아볼게.", {
+    character: "detective",
+    emotions: [
       { at: 0, emotion: "search" },
       { at: 9, emotion: "found" },
     ],
-    "analyzing",
-  );
+  });
 
-  assert.deepEqual(segments, [{ emotion: "search", text: "찾아볼게." }]);
+  assert.deepEqual(segments, [
+    { character: "detective", emotion: "search", text: "찾아볼게." },
+  ]);
 });
 
 test("본문 길이를 벗어난 자리 표시는 버린다", () => {
   // 저장된 대화를 되살릴 때 어긋난 값이 섞여 들어와도 화면이 깨지지 않아야 한다
-  const segments = splitByEmotion("짧은 말.", [{ at: 999, emotion: "oops" }], "analyzing");
+  const segments = splitSpeech("짧은 말.", {
+    character: "detective",
+    emotions: [{ at: 999, emotion: "oops" }],
+  });
 
-  assert.deepEqual(segments, [{ emotion: "analyzing", text: "짧은 말." }]);
+  assert.deepEqual(segments, [
+    { character: "detective", emotion: "analyzing", text: "짧은 말." },
+  ]);
 });
 
 // ── 3. 대화 압축 ─────────────────────────────────────────────

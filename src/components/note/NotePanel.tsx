@@ -3,7 +3,7 @@
 import { Check, History, Printer } from "lucide-react";
 import { useState } from "react";
 
-import { getCharacter } from "@/lib/characters";
+import { getCharacter, isCharacterId } from "@/lib/characters";
 import { isComplete, STAGES, STAGE_IDS, type StageId } from "@/lib/quest";
 import { cn } from "@/lib/utils";
 import type { SessionState } from "@/types/chat";
@@ -12,7 +12,7 @@ import type { SessionState } from "@/types/chat";
 const FIELD_LABELS: Record<string, string> = {
   nickname: "별명",
   interests: "관심사",
-  matchedCharacter: "함께한 선배",
+  matchedFriends: "함께한 발명반 친구",
   problemArea: "관심 분야",
   observations: "발견한 불편함",
   problemStatement: "문제 정의문",
@@ -29,15 +29,17 @@ const FIELD_LABELS: Record<string, string> = {
   differentiation: "차별점",
 };
 
-const CHARACTER_LABELS: Record<string, string> = {
-  teacher: "발명 마스터 선생님",
-  jiyou: "지유 선배",
-  detective: "특허 탐정",
-};
+/** 캐릭터 id 를 사람 이름으로 — 노트는 학생·선생님이 읽는 글이다 */
+function characterLabel(value: unknown): string {
+  const id = String(value);
+  return isCharacterId(id) ? getCharacter(id).name : id;
+}
 
 function formatValue(key: string, value: unknown): string {
+  if (key === "matchedFriends" && Array.isArray(value)) {
+    return value.map(characterLabel).join(", ");
+  }
   if (Array.isArray(value)) return value.map((item) => String(item)).join(", ");
-  if (key === "matchedCharacter") return CHARACTER_LABELS[String(value)] ?? String(value);
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);

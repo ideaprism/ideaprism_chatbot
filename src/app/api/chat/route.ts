@@ -9,7 +9,7 @@ import {
 import { resolveProvider } from "@/lib/ai/provider";
 import { AiError, type AiMessage, type AiToolResult } from "@/lib/ai/types";
 import { castAt, normalizeCast } from "@/lib/cast";
-import { normalizeEmotion } from "@/lib/characters";
+import { isCharacterId, normalizeEmotion } from "@/lib/characters";
 import { handoffEnterText, operatingRulesTemplate, stageMission } from "@/lib/flow";
 import { saveNote } from "@/lib/notes/repository";
 import { loadCast } from "@/lib/prompts/cast";
@@ -94,14 +94,21 @@ export async function POST(request: Request) {
   };
 
   const stage = STAGES[session.quest.currentStage];
-  const characterId = castAt(session.cast, session.quest.currentStage);
+  // 이 단계에 함께 있는 사람들. 첫 번째가 이끌고, 둘이면 서로 주고받는다.
+  const crew = castAt(session.cast, session.quest.currentStage);
+  const characterId = crew[0];
+  const companionId = crew[1] ?? null;
 
   let persona: string;
+  let companionPersona: string | null = null;
   try {
-    persona = await loadPersona(characterId);
+    [persona, companionPersona] = await Promise.all([
+      loadPersona(characterId),
+      companionId ? loadPersona(companionId) : Promise.resolve(null),
+    ]);
   } catch (error) {
     console.error("[chat] 페르소나 로딩 실패", error);
-    return fail(`페르소나 파일을 읽지 못했습니다 (${characterId}).`, 500);
+    return fail(`페르소나 파일을 읽지 못했습니다 (${crew.join(", ")}).`, 500);
   }
 
   // 대화 흐름 지침은 flow/*.md 에서 읽는다 (대표님이 직접 고치는 파일).
@@ -160,7 +167,14 @@ export async function POST(request: Request) {
       : opener,
   ];
 
-  const system = buildSystemPrompt(characterId, persona, rulesTemplate);
+  const system = buildSystemPrompt(
+    characterId,
+    persona,
+    rulesTemplate,
+    companionId && companionPersona
+      ? { id: companionId, personaText: companionPersona }
+      : null,
+  );
   const tools = toolsForStage(session.quest.currentStage);
 
   const encoder = new TextEncoder();
@@ -168,6 +182,8 @@ export async function POST(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const emotionParser = createEmotionParser();
+      /** 지금 말하고 있는 사람. 둘이 함께 있으면 [말:id] 로 바뀐다 */
+      let speaker = characterId;
       /** 방금 내보낸 감정. 같은 감정이 잇달아 나오면 화면을 쪼갤 이유가 없다 */
       let lastEmotion: string | null = null;
       /** 학생 화면에 실제로 글자가 나갔는가 */
@@ -191,10 +207,21 @@ export async function POST(request: Request) {
             if (part.text) send({ type: "text", delta: part.text });
             continue;
           }
-          const emotion = normalizeEmotion(characterId, part.emotion);
+
+          if (part.kind === "speaker") {
+            // 이 단계에 없는 사람 이름을 적어 냈으면 버린다 (아키텍처 원칙 4)
+            if (!isCharacterId(part.speaker) || !crew.includes(part.speaker)) continue;
+            if (part.speaker === speaker) continue;
+            speaker = part.speaker;
+            lastEmotion = null; // 감정 이름은 사람마다 다르다 — 새로 시작한다
+            send({ type: "speaker", character: speaker });
+            continue;
+          }
+
+          const emotion = normalizeEmotion(speaker, part.emotion);
           if (emotion === lastEmotion) continue;
           lastEmotion = emotion;
-          send({ type: "emotion", emotion, character: characterId });
+          send({ type: "emotion", emotion, character: speaker });
         }
       };
 
@@ -292,8 +319,8 @@ export async function POST(request: Request) {
         if (!lastEmotion) {
           send({
             type: "emotion",
-            emotion: normalizeEmotion(characterId, null),
-            character: characterId,
+            emotion: normalizeEmotion(speaker, null),
+            character: speaker,
           });
         }
 

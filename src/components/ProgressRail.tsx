@@ -46,7 +46,8 @@ export function ProgressRail({
   canGoBack: boolean;
 }) {
   const steps = progressView(quest);
-  const character = getCharacter(castAt(cast, quest.currentStage));
+  // 한 단계에 둘이 함께 있을 수 있다 (0단계에서 선생님이 친구 둘을 짝지어 준다)
+  const crew = castAt(cast, quest.currentStage).map(getCharacter);
 
   return (
     <header className="no-print sticky top-0 z-20 border-b border-line bg-panel/90 backdrop-blur">
@@ -58,7 +59,13 @@ export function ProgressRail({
         </Link>
 
         <p className="ml-auto text-xs text-neutral-500">
-          지금 함께하는 사람 · <span className="font-medium">{character.name}</span>
+          지금 함께하는 사람 ·{" "}
+          {crew.map((member, index) => (
+            <span key={member.id}>
+              {index > 0 && ", "}
+              <span className={cn("font-medium", member.theme.accent)}>{member.name}</span>
+            </span>
+          ))}
         </p>
 
         {providerPicker}

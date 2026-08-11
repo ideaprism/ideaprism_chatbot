@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { CharacterAvatar } from "./CharacterAvatar";
 import { getCharacter } from "@/lib/characters";
-import { splitByEmotion } from "@/lib/emotion";
+import { splitSpeech } from "@/lib/emotion";
 import type { ToolName } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/types/chat";
@@ -72,14 +72,17 @@ function CharacterBubble({ message }: { message: ChatMessage }) {
   const meta = getCharacter(characterId);
   const tools = message.tools ?? [];
 
-  // 감정이 바뀐 자리에서 글을 토막 내고, 토막마다 다른 그림을 붙인다.
-  // 감정이 한 번만 나왔으면 토막도 하나 — 지금까지와 똑같이 보인다.
-  const segments = splitByEmotion(message.text, message.emotionMarks, meta.defaultEmotion);
+  // 사람이 바뀐 자리와 감정이 바뀐 자리에서 글을 토막 내고,
+  // 토막마다 그 사람의 얼굴과 말풍선 색을 붙인다.
+  // 혼자 말하고 감정도 한 번뿐이면 토막도 하나 — 지금까지와 똑같이 보인다.
+  const segments = splitSpeech(message.text, {
+    emotions: message.emotionMarks,
+    speakers: message.speakerMarks,
+    character: characterId,
+  });
 
   return (
     <div className="flex flex-col gap-2">
-      <p className={cn("text-xs font-semibold", meta.theme.accent)}>{meta.name}</p>
-
       {tools.length > 0 && (
         <ul className="flex flex-wrap gap-1.5">
           {tools.map((tool) => (
@@ -93,32 +96,46 @@ function CharacterBubble({ message }: { message: ChatMessage }) {
         </ul>
       )}
 
-      <div className="flex flex-col gap-3">
-        {/* 아직 한 글자도 안 나왔으면 말풍선만. 그림은 대사와 함께 나온다 */}
-        {segments.length === 0
-          ? message.pending && (
-              <div
-                className={cn(
-                  "self-start rounded-2xl rounded-tl-sm border px-4 py-2.5 text-[15px] leading-relaxed",
-                  meta.theme.bubble,
-                )}
-              >
-                <span className="text-neutral-400">생각하는 중…</span>
-              </div>
-            )
-          : segments.map((segment, index) => (
+      {/* 아직 한 글자도 안 나왔으면 말풍선만. 얼굴은 대사와 함께 나온다 */}
+      {segments.length === 0 ? (
+        <>
+          <p className={cn("text-xs font-semibold", meta.theme.accent)}>{meta.name}</p>
+          {message.pending && (
+            <div
+              className={cn(
+                "self-start rounded-2xl rounded-tl-sm border px-4 py-2.5 text-[15px] leading-relaxed",
+                meta.theme.bubble,
+              )}
+            >
+              <span className="text-neutral-400">생각하는 중…</span>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {segments.map((segment, index) => {
+            const who = getCharacter(segment.character);
+            // 이름표는 말하는 사람이 바뀔 때만 — 같은 사람이 이어 말하면 군더더기다
+            const showName = index === 0 || segments[index - 1].character !== segment.character;
+
+            return (
               <div key={index} className="flex items-start gap-3">
                 <CharacterAvatar
-                  character={characterId}
+                  character={segment.character}
                   emotion={segment.emotion}
                   size={AVATAR_SIZE}
                 />
 
                 <div className="min-w-0 flex-1">
+                  {showName && (
+                    <p className={cn("mb-1 text-xs font-semibold", who.theme.accent)}>
+                      {who.name}
+                    </p>
+                  )}
                   <div
                     className={cn(
                       "inline-block max-w-full rounded-2xl rounded-tl-sm border px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap",
-                      meta.theme.bubble,
+                      who.theme.bubble,
                     )}
                   >
                     <span
@@ -132,8 +149,10 @@ function CharacterBubble({ message }: { message: ChatMessage }) {
                   </div>
                 </div>
               </div>
-            ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -86,6 +86,11 @@ export function buildSystemPrompt(
   personaText: string,
   /** flow/공통규칙.md 원문. 없으면 코드에 든 기본 규칙을 쓴다 */
   rulesTemplate?: string | null,
+  /**
+   * 이 단계에 함께 있는 다른 사람 (둘이 함께 있는 단계).
+   * 있으면 그 사람의 대본도 함께 넣고, 화자를 바꾸는 법을 알려 준다.
+   */
+  companion?: { id: CharacterId; personaText: string } | null,
 ): string[] {
   const character = getCharacter(characterId);
   const rules = rulesTemplate
@@ -96,7 +101,43 @@ export function buildSystemPrompt(
       })
     : defaultOperatingRules(characterId);
 
-  return [rules, `# 캐릭터 대본\n\n${personaText}`];
+  const pieces = [rules, `# 캐릭터 대본 — ${character.name} (${characterId})\n\n${personaText}`];
+  if (companion) {
+    pieces.push(
+      `# 함께 있는 친구의 대본 — ${getCharacter(companion.id).name} (${companion.id})\n\n` +
+        `${companion.personaText}\n\n` +
+        duetRules(characterId, companion.id),
+    );
+  }
+  return pieces;
+}
+
+/**
+ * 두 친구가 함께 말할 때의 규칙.
+ *
+ * 화면은 `[말:id]` 가 나온 자리에서 말풍선을 갈라 각자의 얼굴을 붙인다.
+ * 그래서 표식 없이 이름만 적으면 한 사람이 다른 사람 흉내를 내는 꼴이 된다.
+ */
+function duetRules(hostId: CharacterId, companionId: CharacterId): string {
+  const host = getCharacter(hostId);
+  const companion = getCharacter(companionId);
+
+  return `## 둘이 함께 말하기 (반드시 지킬 것)
+
+이 단계에는 **${host.name}과(와) ${companion.name} 둘이 함께** 학생과 이야기한다.
+너는 두 사람을 모두 연기하되, **말하는 사람이 바뀌는 자리마다 표식을 찍는다.**
+
+- 형식: [말:${hostId}] 또는 [말:${companionId}]
+- 표식 뒤에는 그 사람의 감정 태그를 이어 쓴다. 예: [말:${companionId}] [감정:...] 대사
+- 감정 이름은 **사람마다 다르다.** 그 사람 대본에 있는 이름만 쓴다.
+  · ${host.name}: ${emotionNames(hostId).join(", ")}
+  · ${companion.name}: ${emotionNames(companionId).join(", ")}
+- 표식 없이 "○○이가 말했다" 처럼 남의 말을 대신 옮기지 않는다. 표식을 찍고 직접 말하게 한다.
+- 한 번에 한 사람이 서너 문장씩. 둘이 번갈아 쏟아내면 학생이 낄 틈이 없다.
+- **둘이 매번 다 말할 필요는 없다.** 한 사람만 답해도 되고, 보탤 말이 있을 때만 끼어든다.
+- 서로 다른 시각을 보여 준다. 똑같은 말을 두 번 하지 않는다.
+- 도구(리모컨)를 부르는 것은 사람과 상관없다. 필요하면 누구든 부른다.
+- 학생에게 하는 질문은 **한 번에 하나**다. 둘이 각각 물으면 두 개가 된다.`;
 }
 
 export interface TurnContext {
@@ -299,15 +340,21 @@ export function normalizeHistory(
   return [{ role: "user", content: SESSION_OPENING_CUE }, ...history];
 }
 
-/** [감정:이름] 과 [이탈] 을 한 번에 훑는다. 순서를 지키려면 하나로 훑어야 한다. */
-const TAG_PATTERN = /\[\s*(?:감정\s*:\s*([A-Za-z_][A-Za-z0-9_]*)|이탈)\s*\]/g;
+/**
+ * [말:누구] · [감정:이름] · [이탈] 을 한 번에 훑는다. 순서를 지키려면 하나로 훑어야 한다.
+ * 첫 번째 묶음이 감정 이름, 두 번째가 화자 id 다.
+ */
+const TAG_PATTERN =
+  /\[\s*(?:감정\s*:\s*([A-Za-z_][A-Za-z0-9_]*)|말\s*:\s*([A-Za-z_][A-Za-z0-9_]*)|이탈)\s*\]/g;
 /** 태그가 스트림 조각 사이에서 잘릴 수 있으므로, 이만큼은 붙들고 기다린다 */
 const TAG_LOOKAHEAD = 32;
 
 /** 표식과 글자가 나온 순서를 그대로 담는 조각 */
 export type ParsedPart =
   | { kind: "text"; text: string }
-  | { kind: "emotion"; emotion: string };
+  | { kind: "emotion"; emotion: string }
+  /** 여기서부터 다른 사람이 말한다 (둘이 함께 있는 단계) */
+  | { kind: "speaker"; speaker: string };
 
 export interface ParsedChunk {
   /**
@@ -358,6 +405,8 @@ export function createEmotionParser() {
       if (hit[1]) {
         parts.push({ kind: "emotion", emotion: hit[1] });
         emotions.push(hit[1]);
+      } else if (hit[2]) {
+        parts.push({ kind: "speaker", speaker: hit[2] });
       } else {
         offTopic++;
       }

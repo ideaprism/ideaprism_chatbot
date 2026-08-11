@@ -11,7 +11,7 @@
 
 import "server-only";
 
-import { castAt } from "./cast";
+import { castAt, hostAt, withFriends } from "./cast";
 import { handoffExitText, stageMission } from "./flow";
 import {
   buildKiprisQuery,
@@ -676,7 +676,7 @@ export async function executeTool(
       if (stage === null) return keep("stage는 0~5 사이의 숫자여야 합니다.", true);
 
       // 승급 전 담당 캐릭터 — 배턴터치 연출에서 "누가 떠나는지" 표시에 쓴다
-      const from = castAt(session.cast, session.quest.currentStage);
+      const from = hostAt(session.cast, session.quest.currentStage);
 
       // AI의 주장이 아니라 프로그램이 실제로 한 일을 넘긴다 (아키텍처 원칙 4).
       // 5단계는 이걸로 "특허를 정말 조회했는가"를 판정한다.
@@ -685,13 +685,21 @@ export async function executeTool(
           ? { kiprisQuery: session.patent.query, kiprisTotal: session.patent.totalCount }
           : NO_EVIDENCE;
 
+      // 0단계에서 선생님이 짝지어 준 친구 두 명을 1~4단계에 앉힌다.
+      // 승급을 판정하기 "전"에 바꿔야 배턴터치가 그 두 명에게 걸린다.
+      const artifactRecord = (args.artifact ?? {}) as Record<string, unknown>;
+      const cast =
+        stage === 0
+          ? withFriends(session.cast, artifactRecord.matchedFriends)
+          : session.cast;
+
       const outcome = advanceStage(
         session.quest,
         stage,
         args.artifact,
         Date.now(),
         evidence,
-        session.cast,
+        cast,
       );
 
       if (!outcome.ok) {
@@ -701,20 +709,26 @@ export async function executeTool(
       }
 
       // 0단계 산출물에서 별명을 받아 세션에 고정한다
-      const artifact = (args.artifact ?? {}) as Record<string, unknown>;
       const nickname =
-        stage === 0 && typeof artifact.nickname === "string" && artifact.nickname.trim()
-          ? artifact.nickname.trim()
+        stage === 0 &&
+        typeof artifactRecord.nickname === "string" &&
+        artifactRecord.nickname.trim()
+          ? artifactRecord.nickname.trim()
           : session.nickname;
 
-      const next: SessionState = { ...session, quest: outcome.state, nickname };
+      const next: SessionState = { ...session, quest: outcome.state, nickname, cast };
       const events: ChatEvent[] = [];
 
       // 승급 후 AI에게 줄 안내는 flow/*.md 에서 가져온다 (대표님이 고치는 파일).
       // 담당이 바뀌면 "퇴장 인사" 지침을, 그대로면 다음 단계에서 할 일을 준다.
       let guidance = outcome.message;
       if (outcome.characterChanged) {
-        guidance = await handoffExitText(from, outcome.nextCharacter, outcome.nextStage);
+        // 다음 단계에 둘이 있으면 둘 다 소개하게 한다
+        guidance = await handoffExitText(
+          from,
+          castAt(cast, outcome.nextStage),
+          outcome.nextStage,
+        );
         events.push({
           type: "handoff",
           from,

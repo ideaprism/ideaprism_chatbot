@@ -6,7 +6,7 @@
  * (PRD F-1 / 리스크 대응 "AI가 단계를 건너뛰거나 늘어짐")
  */
 
-import type { CharacterId } from "./characters";
+import { CHARACTERS, type CharacterId } from "./characters";
 
 export type StageId = 0 | 1 | 2 | 3 | 4 | 5;
 export const STAGE_IDS: StageId[] = [0, 1, 2, 3, 4, 5];
@@ -14,7 +14,7 @@ export const FINAL_STAGE: StageId = 5;
 
 /** 단계별 산출물 — 발명노트에 그대로 쌓인다 */
 export interface StageArtifacts {
-  0: { nickname: string; interests: string[]; matchedCharacter: CharacterId };
+  0: { nickname: string; interests: string[]; matchedFriends: CharacterId[] };
   1: { problemArea: string; observations: string[] };
   2: { problemStatement: string; target: string; pain: string };
   3: { techniquesTried: string[]; candidates: string[] };
@@ -84,6 +84,26 @@ function check(
   return missing.length === 0 ? { ok: true } : { ok: false, missing, hint };
 }
 
+/** 학생과 짝지어 줄 수 있는 사람 — 발명반 친구(선배)만. 교사·전문가는 짝이 아니다 */
+export const FRIEND_IDS: CharacterId[] = (
+  Object.keys(CHARACTERS) as CharacterId[]
+).filter((id) => CHARACTERS[id].group === "senior");
+
+/**
+ * 0단계 산출물의 "발명반 친구 두 명"이 쓸 만한 값인가.
+ *
+ * AI가 아무 이름이나 적어 내면 대화가 없는 사람에게 넘어간다.
+ * 그래서 **선배 목록에 있는 서로 다른 두 명**일 때만 통과시킨다 (아키텍처 원칙 2).
+ */
+function isFriendPair(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 2) return false;
+  const [first, second] = value;
+  if (first === second) return false;
+  return [first, second].every(
+    (id) => typeof id === "string" && FRIEND_IDS.includes(id as CharacterId),
+  );
+}
+
 // ── 단계 정의 ────────────────────────────────────────────────
 
 export const STAGES: Record<StageId, StageDefinition> = {
@@ -91,12 +111,14 @@ export const STAGES: Record<StageId, StageDefinition> = {
     id: 0,
     label: "시작",
     character: "teacher",
-    doneWhen: "별명과 관심사를 나누고, 함께할 발명 선배를 소개받으면 완료",
+    doneWhen: "별명과 관심사를 나누고, 함께할 발명반 친구 두 명을 소개받으면 완료",
     mission: `학생과 처음 만나는 단계다.
 - 따뜻하게 인사하고, 편하게 부를 별명을 물어본다. (실명·연락처는 절대 묻지 않는다)
 - 학년, 요즘 관심사, 발명 경험을 가볍게 2~3가지만 물어본다. 취조하듯 몰아붙이지 않는다.
-- 몇 마디 나눈 뒤 "너는 지유 선배랑 잘 맞겠는데?" 하고 지유 선배를 소개하며 배턴을 넘긴다.
-- 별명과 관심사를 알아냈으면 complete_stage 도구를 호출한다. (matchedCharacter는 "jiyou")`,
+- 앞으로 어떻게 흘러가는지 짧게 알려 준다: 다섯 단계를 하나씩 따라가면 발명이 완성된다.
+- 나눈 이야기를 바탕으로 **발명반 친구 두 명**을 골라 왜 그 둘인지와 함께 소개한다.
+- 별명·관심사·친구 두 명이 정해졌으면 complete_stage 를 호출한다.
+  (matchedFriends 에 고른 두 명의 id를 넣는다)`,
     validate: (artifact) => {
       const a = asRecord(artifact);
       return check(
@@ -104,9 +126,11 @@ export const STAGES: Record<StageId, StageDefinition> = {
         [
           ["nickname", text(a.nickname, 1)],
           ["interests", list(a.interests, 1)],
-          ["matchedCharacter", a.matchedCharacter === "jiyou"],
+          ["matchedFriends(발명반 친구 2명)", isFriendPair(a.matchedFriends)],
         ],
-        "별명과 관심사를 최소 1가지 이상 확인한 뒤에 다음 단계로 넘어갈 수 있어요.",
+        "별명과 관심사를 확인하고, 발명반 친구 두 명을 골라 소개한 뒤에 넘어갈 수 있어요. " +
+          "고를 수 있는 친구: " +
+          FRIEND_IDS.join(", "),
       );
     },
   },
@@ -355,9 +379,9 @@ export function stageOf(state: QuestState): StageDefinition {
  */
 export function characterOf(
   state: QuestState,
-  cast?: Partial<Record<StageId, CharacterId>>,
+  cast?: Partial<Record<StageId, CharacterId[]>>,
 ): CharacterId {
-  return cast?.[state.currentStage] ?? STAGES[state.currentStage].character;
+  return cast?.[state.currentStage]?.[0] ?? STAGES[state.currentStage].character;
 }
 
 export function isComplete(state: QuestState): boolean {
@@ -387,10 +411,18 @@ export function advanceStage(
   /** 프로그램이 실제로 관측한 사실. 안 주면 "아무것도 안 해 봤다"로 본다. */
   evidence: StageEvidence = NO_EVIDENCE,
   /** 이번 대화의 담당 배치. 안 주면 STAGES 의 공장 초기값 (`cast.ts` 참조) */
-  cast?: Partial<Record<StageId, CharacterId>>,
+  cast?: Partial<Record<StageId, CharacterId[]>>,
 ): AdvanceResult {
-  /** 이 단계를 맡은 사람 — 배치가 있으면 그것, 없으면 공장 초기값 */
-  const who = (id: StageId): CharacterId => cast?.[id] ?? STAGES[id].character;
+  /** 이 단계에 함께 있는 사람들 */
+  const crew = (id: StageId): CharacterId[] => {
+    const members = cast?.[id];
+    return members && members.length > 0 ? members : [STAGES[id].character];
+  };
+  /** 이 단계를 이끄는 사람 */
+  const who = (id: StageId): CharacterId => crew(id)[0];
+  /** 사람 구성이 바뀌었는가 — 배턴터치를 띄울지 판정 */
+  const sameCrew = (a: CharacterId[], b: CharacterId[]) =>
+    a.length === b.length && a.every((id, index) => id === b[index]);
 
   const stay = (message: string): AdvanceResult => ({
     ok: false,
@@ -454,7 +486,7 @@ export function advanceStage(
 
   const nextDef = STAGES[nextStage];
   const nextCharacter = who(nextStage);
-  const changed = who(stage) !== nextCharacter;
+  const changed = !sameCrew(crew(stage), crew(nextStage));
 
   return {
     ok: true,

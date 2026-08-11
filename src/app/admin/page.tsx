@@ -14,7 +14,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { DEFAULT_CAST, parseCast, serializeCast } from "@/lib/cast";
+import { normalizeCast, parseCast, serializeCast } from "@/lib/cast";
 import { charactersByGroup, CHARACTERS, type CharacterId } from "@/lib/characters";
 import { STAGE_IDS, STAGES, type StageId } from "@/lib/quest";
 import { cn } from "@/lib/utils";
@@ -506,8 +506,14 @@ function CastEditor({
   const cast = parseCast(value);
   const groups = charactersByGroup();
 
-  const pick = (stage: StageId, who: CharacterId) => {
-    onChange(serializeCast({ ...cast, [stage]: who }));
+  /** slot 0 = 이끄는 사람, slot 1 = 함께 있는 친구 (없음 = 혼자) */
+  const pick = (stage: StageId, slot: 0 | 1, who: CharacterId | null) => {
+    const members = [...cast[stage]];
+    if (who === null) members.splice(slot, 1);
+    else members[slot] = who;
+    // 같은 사람을 두 칸에 넣으면 혼자 두 명인 척하게 된다
+    const unique = members.filter((id, index) => id && members.indexOf(id) === index);
+    onChange(serializeCast(normalizeCast({ ...cast, [stage]: unique })));
   };
 
   return (
@@ -522,8 +528,29 @@ function CastEditor({
 
       <ul className="space-y-2">
         {STAGE_IDS.map((stage) => {
-          const who = CHARACTERS[cast[stage]];
-          const changed = cast[stage] !== DEFAULT_CAST[stage];
+          const members = cast[stage];
+
+          const chooser = (slot: 0 | 1) => (
+            <select
+              key={slot}
+              value={members[slot] ?? ""}
+              onChange={(event) =>
+                pick(stage, slot, (event.target.value || null) as CharacterId | null)
+              }
+              className="rounded-lg border border-line bg-white px-2 py-1.5 text-sm outline-none focus:border-neutral-400"
+            >
+              {slot === 1 && <option value="">— 혼자 —</option>}
+              {groups.map(({ group, label, members: options }) => (
+                <optgroup key={group} label={label}>
+                  {options.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          );
 
           return (
             <li
@@ -539,30 +566,11 @@ function CastEditor({
                 <p className="text-[11px] text-neutral-400">{STAGES[stage].doneWhen}</p>
               </div>
 
-              <div className="ml-auto flex items-center gap-2">
-                {changed && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
-                    바뀜
-                  </span>
-                )}
-                <span className={cn("text-xs font-semibold", who.theme.accent)}>
-                  {who.subtitle}
-                </span>
-                <select
-                  value={cast[stage]}
-                  onChange={(event) => pick(stage, event.target.value as CharacterId)}
-                  className="rounded-lg border border-line bg-white px-2 py-1.5 text-sm outline-none focus:border-neutral-400"
-                >
-                  {groups.map(({ group, label, members }) => (
-                    <optgroup key={group} label={label}>
-                      {members.map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-neutral-400">이끄는 사람</span>
+                {chooser(0)}
+                <span className="text-[11px] text-neutral-400">함께</span>
+                {chooser(1)}
               </div>
             </li>
           );
@@ -570,9 +578,11 @@ function CastEditor({
       </ul>
 
       <p className="mt-4 text-[11px] leading-relaxed text-neutral-400">
-        ※ 저장해도 <b>이미 이야기 중인 학생은 원래 만나던 사람과 끝까지 갑니다.</b>
-        <br />
-        새로 시작하는 대화부터 바뀐 배치로 만납니다.
+        ※ 한 단계에 <b>둘까지</b> 앉힐 수 있습니다. 둘이면 서로 주고받으며 이야기합니다.
+        <br />※ <b>0단계에서 선생님이 골라 준 친구 두 명이 1~4단계를 대신 채웁니다.</b> 여기
+        설정은 선생님이 고르기 전까지의 기본값입니다.
+        <br />※ 저장해도 <b>이미 이야기 중인 학생은 원래 만나던 사람과 끝까지 갑니다.</b> 새로
+        시작하는 대화부터 바뀐 배치로 만납니다.
       </p>
     </div>
   );

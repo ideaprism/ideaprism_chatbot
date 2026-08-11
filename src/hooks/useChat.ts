@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { castAt, DEFAULT_CAST, normalizeCast, type Cast } from "@/lib/cast";
+import { DEFAULT_CAST, hostAt, normalizeCast, type Cast } from "@/lib/cast";
 import { getCharacter, normalizeEmotion, type CharacterId } from "@/lib/characters";
-import type { EmotionMark } from "@/lib/emotion";
+import type { EmotionMark, SpeakerMark } from "@/lib/emotion";
 import { canRevisit, revisitStage, type StageId } from "@/lib/quest";
 import { createSession, SESSION_STORAGE_KEY } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
@@ -125,7 +125,9 @@ export function useChat() {
       setError(null);
       setStreaming(true);
 
-      const character = castAt(baseSession.cast, baseSession.quest.currentStage);
+      // 말풍선의 기본 주인은 이 단계를 이끄는 사람.
+      // 둘이 함께 있으면 서버가 [말:이름] 표식으로 중간에 화자를 바꿔 준다.
+      const character = hostAt(baseSession.cast, baseSession.quest.currentStage);
       const assistantId = newId();
 
       // 서버로 보낼 이력은 이번 턴 말풍선을 붙이기 "전" 상태로 만든다
@@ -142,6 +144,7 @@ export function useChat() {
         character,
         emotion: getCharacter(character).defaultEmotion,
         emotionMarks: [],
+        speakerMarks: [],
         text: "",
         tools: [],
         pending: true,
@@ -184,6 +187,8 @@ export function useChat() {
          * 감정 이벤트가 온 시점의 글자 수가 곧 "그 감정이 시작되는 자리"다.
          */
         let marks: EmotionMark[] = [];
+        /** 말하는 사람이 바뀐 자리 — 둘이 함께 있는 단계에서 생긴다 */
+        let speakers: SpeakerMark[] = [];
         const tools: ToolName[] = [];
 
         for (;;) {
@@ -209,9 +214,13 @@ export function useChat() {
               case "emotion": {
                 const emotion = normalizeEmotion(event.character, event.emotion);
                 marks = [...marks, { at: text.length, emotion }];
-                patch({ emotion, emotionMarks: marks, character: event.character });
+                patch({ emotion, emotionMarks: marks });
                 break;
               }
+              case "speaker":
+                speakers = [...speakers, { at: text.length, character: event.character }];
+                patch({ speakerMarks: speakers });
+                break;
               case "text":
                 text += event.delta;
                 patch({ text });

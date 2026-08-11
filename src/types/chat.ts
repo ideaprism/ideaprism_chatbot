@@ -1,7 +1,7 @@
 import type { ProviderId } from "@/lib/ai/types";
 import type { Cast } from "@/lib/cast";
 import type { CharacterId } from "@/lib/characters";
-import type { EmotionMark } from "@/lib/emotion";
+import type { EmotionMark, SpeakerMark } from "@/lib/emotion";
 import type { QuestState, StageId } from "@/lib/quest";
 import type { ToolName } from "@/lib/tools";
 import type { Patent, PatentSnapshot } from "@/types/kipris";
@@ -69,6 +69,8 @@ export interface ChatMessage {
    * 화면은 이 자리에서 글을 토막 내 토막마다 다른 그림을 붙인다.
    */
   emotionMarks?: EmotionMark[];
+  /** 답변 도중 말하는 사람이 바뀐 자리들 (둘이 함께 있는 단계) */
+  speakerMarks?: SpeakerMark[];
   text: string;
   /** 이 턴에 호출된 도구 이름들 (화면에 "검색 중…" 표시용) */
   tools?: ToolName[];
@@ -96,6 +98,8 @@ export interface ChatRequest {
 /** 서버 → 브라우저 SSE 이벤트 */
 export type ChatEvent =
   | { type: "emotion"; emotion: string; character: CharacterId }
+  /** 여기서부터 다른 사람이 말한다 (둘이 함께 있는 단계) */
+  | { type: "speaker"; character: CharacterId }
   | { type: "text"; delta: string }
   | { type: "tool"; name: ToolName; status: "start" | "done"; note?: string }
   | { type: "handoff"; from: CharacterId; to: CharacterId; stage: StageId }

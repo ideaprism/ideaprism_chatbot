@@ -64,15 +64,21 @@ export async function stageMission(stage: StageId): Promise<string> {
   return (await loadFlow(STAGE_FILES[stage])) ?? STAGES[stage].mission;
 }
 
-/** 배턴터치 — 떠나는 캐릭터에게 줄 지침 */
+/**
+ * 배턴터치 — 떠나는 캐릭터에게 줄 지침.
+ * 다음 단계에 둘이 함께 있으면 두 이름을 다 넘긴다 (한 명만 부르면 나머지가 유령이 된다).
+ */
 export async function handoffExitText(
   from: CharacterId,
-  to: CharacterId,
+  to: CharacterId | CharacterId[],
   nextStage: StageId,
 ): Promise<string> {
+  const next = (Array.isArray(to) ? to : [to]).map((id) => getCharacter(id).name);
+  const nextNames = next.join("과(와) ");
+
   const values = {
     현재캐릭터: getCharacter(from).name,
-    다음캐릭터: getCharacter(to).name,
+    다음캐릭터: nextNames,
     다음단계번호: String(nextStage),
     다음단계이름: STAGES[nextStage].label,
   };
@@ -82,8 +88,9 @@ export async function handoffExitText(
 
   return (
     `이번 단계를 마쳤다. 다음은 ${nextStage}단계 「${STAGES[nextStage].label}」이고 ` +
-    `${values.다음캐릭터}이(가) 이어받는다. 지금 맡은 역할로 따뜻하게 퇴장 인사를 건네고 ` +
-    `다음 캐릭터를 소개하며 마무리하세요. 다음 캐릭터의 대사는 당신이 쓰지 않습니다.`
+    `${nextNames}이(가) 이어받는다. 지금 맡은 역할로 따뜻하게 퇴장 인사를 건네고 ` +
+    `${next.length > 1 ? "두 사람" : "다음 캐릭터"}을 소개하며 마무리하세요. ` +
+    `다음 캐릭터의 대사는 당신이 쓰지 않습니다.`
   );
 }
 

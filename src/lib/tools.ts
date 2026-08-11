@@ -239,7 +239,7 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
           type: "object",
           description:
             "그 단계의 산출물. 단계마다 필요한 항목이 다르다.\n" +
-            "0단계: { nickname, interests[], matchedCharacter:'jiyou' }\n" +
+            "0단계: { nickname, interests[], matchedFriends:[친구id, 친구id] } — 서로 다른 두 명\n" +
             "1단계: { problemArea, observations[] }\n" +
             "2단계: { problemStatement, target, pain }\n" +
             "3단계: { techniquesTried[](2개 이상), candidates[](2개 이상) }\n" +
