@@ -6,8 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
-import { CHARACTERS, emotionImageUrl, type CharacterId } from "@/lib/characters";
-import { STAGE_IDS, STAGES, type StageId } from "@/lib/quest";
+import { charactersByGroup, emotionImageUrl } from "@/lib/characters";
+import { STAGES, type StageId } from "@/lib/quest";
 import { SESSION_STORAGE_KEY } from "@/lib/session";
 
 /**
@@ -33,8 +33,6 @@ const WORDMARK: Array<[string, string]> = [
   ["s", "text-violet-500"],
   ["m", "text-purple-600"],
 ];
-
-const TRIO: CharacterId[] = ["teacher", "jiyou", "detective"];
 
 /**
  * 하던 대화가 어디까지 왔는지 sessionStorage 에서 읽는다.
@@ -121,46 +119,14 @@ export default function Landing() {
         세로 여백은 창 높이에 맞춰 줄인다 — 낮은 노트북에서도 스크롤이 안 생기게.
         그래도 모자랄 만큼 창이 낮으면 잘리는 대신 이 안쪽만 스크롤된다.
       */}
-      <div className="scroll-soft relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center gap-5 overflow-y-auto px-5 py-5 text-center [@media(min-height:760px)]:gap-8 [@media(min-height:760px)]:py-10">
-        {/* 함께할 세 사람 */}
-        <div className="flex items-start justify-center gap-3 sm:gap-6">
-          {TRIO.map((id) => {
-            const character = CHARACTERS[id];
-            return (
-              // 얼굴은 창이 넓고 높을 때만 크게 — 좁거나 낮으면 스크롤이 생긴다
-              <div
-                key={id}
-                className="flex w-20 flex-col items-center gap-2 [@media(min-width:640px)_and_(min-height:760px)]:w-28"
-              >
-                <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-outline-variant/50">
-                  <Image
-                    src={emotionImageUrl(id, character.defaultEmotion)}
-                    alt={character.name}
-                    width={112}
-                    height={112}
-                    sizes="112px"
-                    className="size-20 object-cover [@media(min-width:640px)_and_(min-height:760px)]:size-28"
-                    priority
-                  />
-                </div>
-                <p className="text-[11px] leading-tight font-bold sm:text-xs">
-                  {character.name}
-                </p>
-                <p className="-mt-1 text-[10px] text-on-surface-variant sm:text-[11px]">
-                  {character.role.split("·")[0].trim()}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-
+      <div className="scroll-soft relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-5 py-4 text-center [@media(min-height:760px)]:gap-8 [@media(min-height:760px)]:py-10">
         <div className="max-w-2xl">
-          <h1 className="text-[26px] leading-[1.3] font-black tracking-tight sm:text-4xl lg:text-[42px]">
+          <h1 className="text-[24px] leading-[1.32] font-black tracking-tight sm:text-[28px] [@media(min-height:760px)]:text-4xl">
             발명 선배들과 이야기하며
             <br />
             나만의 <span className="text-primary">발명노트</span>를 완성해요
           </h1>
-          <p className="mt-4 text-sm leading-relaxed text-on-surface-variant sm:text-base">
+          <p className="mt-2 text-[13px] leading-relaxed text-on-surface-variant [@media(min-height:760px)]:mt-3 [@media(min-height:760px)]:text-base">
             채팅이 곧 조종석이에요. 말만 하면 선배가 자료를 찾아 주고,
             <br className="hidden sm:block" /> 다섯 단계를 함께 마치면 발명노트가 저절로
             완성됩니다.
@@ -200,18 +166,59 @@ export default function Landing() {
           )}
         </div>
 
-        {/* 발명 5단계 */}
-        <ol className="flex max-w-2xl flex-wrap items-center justify-center gap-1.5">
-          {STAGE_IDS.map((id) => (
-            <li
-              key={id}
-              className="flex items-center gap-1.5 rounded-full border border-outline-variant/60 bg-surface px-3 py-1 text-[11px] text-on-surface-variant sm:text-xs"
+        {/* 함께할 사람들 — 교사 · 학생 선배 · 전문가 */}
+        <div className="flex w-full max-w-5xl flex-wrap items-start justify-center gap-3">
+          {charactersByGroup().map(({ group, label, members }) => (
+            <section
+              key={group}
+              className="min-w-[240px] flex-1 rounded-2xl border border-outline-variant/50 bg-surface/80 p-2 text-left shadow-sm backdrop-blur-sm [@media(min-height:760px)]:p-3"
             >
-              <span className="font-black text-primary tabular-nums">{id}</span>
-              {STAGES[id].label}
-            </li>
+              <h2 className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-black tracking-wider text-on-surface-variant uppercase [@media(min-height:760px)]:mb-2">
+                {label}
+                <span className="rounded-full bg-primary/10 px-1.5 text-[10px] text-primary">
+                  {members.length}
+                </span>
+              </h2>
+
+              <ul className="space-y-0.5">
+                {members.map((character) => (
+                  <li
+                    key={character.id}
+                    className="flex items-center gap-2 rounded-xl p-0.5 [@media(min-height:760px)]:p-1"
+                  >
+                    {character.hideFace ? (
+                      // 아직 얼굴을 밝히지 않는 인물
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-variant text-base font-black text-outline [@media(min-height:760px)]:size-9">
+                        ?
+                      </span>
+                    ) : (
+                      <Image
+                        src={emotionImageUrl(character.id, character.defaultEmotion)}
+                        alt={character.name}
+                        width={72}
+                        height={72}
+                        sizes="36px"
+                        className="size-8 shrink-0 rounded-lg bg-white object-cover ring-1 ring-outline-variant/40 [@media(min-height:760px)]:size-9"
+                      />
+                    )}
+
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] leading-tight font-bold">
+                        {character.name}
+                        <span className="ml-1.5 text-[10px] font-medium text-on-surface-variant">
+                          {character.subtitle}
+                        </span>
+                      </p>
+                      <p className="truncate text-[11px] leading-tight text-on-surface-variant">
+                        {character.tagline}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ol>
+        </div>
       </div>
 
       <footer className="relative z-10 shrink-0 border-t border-outline-variant/20 bg-surface/70 px-5 py-3 text-center backdrop-blur-md">

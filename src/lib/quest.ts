@@ -349,8 +349,15 @@ export function stageOf(state: QuestState): StageDefinition {
   return STAGES[state.currentStage];
 }
 
-export function characterOf(state: QuestState): CharacterId {
-  return STAGES[state.currentStage].character;
+/**
+ * 이 단계를 맡은 사람.
+ * 배치를 안 주면 STAGES 에 적힌 공장 초기값을 쓴다 (`cast.ts` 참조).
+ */
+export function characterOf(
+  state: QuestState,
+  cast?: Partial<Record<StageId, CharacterId>>,
+): CharacterId {
+  return cast?.[state.currentStage] ?? STAGES[state.currentStage].character;
 }
 
 export function isComplete(state: QuestState): boolean {
@@ -379,14 +386,19 @@ export function advanceStage(
   now: number = Date.now(),
   /** 프로그램이 실제로 관측한 사실. 안 주면 "아무것도 안 해 봤다"로 본다. */
   evidence: StageEvidence = NO_EVIDENCE,
+  /** 이번 대화의 담당 배치. 안 주면 STAGES 의 공장 초기값 (`cast.ts` 참조) */
+  cast?: Partial<Record<StageId, CharacterId>>,
 ): AdvanceResult {
+  /** 이 단계를 맡은 사람 — 배치가 있으면 그것, 없으면 공장 초기값 */
+  const who = (id: StageId): CharacterId => cast?.[id] ?? STAGES[id].character;
+
   const stay = (message: string): AdvanceResult => ({
     ok: false,
     state,
     message,
     characterChanged: false,
     nextStage: state.currentStage,
-    nextCharacter: STAGES[state.currentStage].character,
+    nextCharacter: who(state.currentStage),
   });
 
   if (stage !== state.currentStage) {
@@ -436,24 +448,25 @@ export function advanceStage(
         "학생에게 축하 인사를 건네고, 노트를 출력해 선생님께 보여드리라고 안내하세요.",
       characterChanged: false,
       nextStage: FINAL_STAGE,
-      nextCharacter: STAGES[FINAL_STAGE].character,
+      nextCharacter: who(FINAL_STAGE),
     };
   }
 
   const nextDef = STAGES[nextStage];
-  const changed = STAGES[stage].character !== nextDef.character;
+  const nextCharacter = who(nextStage);
+  const changed = who(stage) !== nextCharacter;
 
   return {
     ok: true,
     state: nextState,
     message: changed
       ? `${stage}단계 완료! 다음은 ${nextStage}단계 "${nextDef.label}"이고, ` +
-        `담당은 ${nextDef.character}입니다. 지금 맡은 역할로 따뜻하게 퇴장 인사를 건네고 ` +
+        `담당은 ${nextCharacter}입니다. 지금 맡은 역할로 따뜻하게 퇴장 인사를 건네고 ` +
         `다음 캐릭터를 소개하며 마무리하세요. 다음 캐릭터의 대사는 당신이 쓰지 않습니다.`
       : `${stage}단계 완료! 이어서 ${nextStage}단계 "${nextDef.label}"을 진행하세요.\n${nextDef.mission}`,
     characterChanged: changed,
     nextStage,
-    nextCharacter: nextDef.character,
+    nextCharacter,
   };
 }
 

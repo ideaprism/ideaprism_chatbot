@@ -16,10 +16,20 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { CHARACTERS, type CharacterId } from "@/lib/characters";
+import { DEFAULT_CAST, serializeCast } from "@/lib/cast";
+import { CHARACTER_IDS, CHARACTERS, type CharacterId } from "@/lib/characters";
 import { supabaseWrite } from "@/lib/supabase";
 
-export type PromptKind = "persona" | "flow";
+/**
+ * 관리할 수 있는 글의 갈래.
+ *   persona — 캐릭터가 어떻게 말하는가
+ *   flow    — 대화가 어떻게 흘러가는가
+ *   config  — 대화구조 같은 설정값 (JSON). 파일이 아니라 코드가 기본값을 준다
+ */
+export type PromptKind = "persona" | "flow" | "config";
+
+/** config 갈래에서 다루는 설정 이름 */
+export const CONFIG_NAMES = ["대화구조"] as const;
 
 /** 관리자 화면에 보여 줄 문서 한 건 */
 export interface PromptDoc {
@@ -40,14 +50,21 @@ const FLOW_DIR = path.join(process.cwd(), "flow");
  * 페르소나는 personas/ 폴더에 있는 파일 전부가 아니라 **실제로 쓰이는 세 캐릭터**만
  * 보여 준다. 안 쓰이는 파일까지 늘어놓으면 어느 것을 고쳐야 할지 헷갈린다.
  */
-export const PERSONA_DOCS: PromptDoc[] = (
-  Object.keys(CHARACTERS) as CharacterId[]
-).map((id) => ({
+export const PERSONA_DOCS: PromptDoc[] = CHARACTER_IDS.map((id) => ({
   kind: "persona" as const,
   name: id,
-  label: CHARACTERS[id].name,
+  label: `${CHARACTERS[id].name} · ${CHARACTERS[id].subtitle}`,
   hint: "이 캐릭터가 어떻게 말하는가 (성격·말투·자기소개)",
 }));
+
+export const CONFIG_DOCS: PromptDoc[] = [
+  {
+    kind: "config",
+    name: "대화구조",
+    label: "대화구조",
+    hint: "어느 단계를 누가 맡는가 (완료 조건은 여기서 못 바꾼다 — 프로그램이 판정)",
+  },
+];
 
 const FLOW_HINTS: Record<string, string> = {
   공통규칙: "세 캐릭터 모두에게 적용되는 규칙 (감정 표현, 도구 사용, 안전장치)",
@@ -74,6 +91,7 @@ export function flowDocs(names: readonly string[]): PromptDoc[] {
 export function isKnownDoc(kind: string, name: string, flowNames: readonly string[]): boolean {
   if (kind === "persona") return PERSONA_DOCS.some((doc) => doc.name === name);
   if (kind === "flow") return flowNames.includes(name);
+  if (kind === "config") return CONFIG_DOCS.some((doc) => doc.name === name);
   return false;
 }
 
@@ -88,7 +106,10 @@ export async function readDefault(kind: PromptKind, name: string): Promise<strin
 
   let value: string | null = null;
   try {
-    if (kind === "persona") {
+    if (kind === "config") {
+      // 설정값은 파일이 아니라 코드가 공장 초기값을 준다
+      value = name === "대화구조" ? serializeCast(DEFAULT_CAST) : null;
+    } else if (kind === "persona") {
       const file = CHARACTERS[name as CharacterId]?.personaFile;
       if (file) value = await readFile(path.join(PERSONA_DIR, file), "utf-8");
     } else {

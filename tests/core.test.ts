@@ -29,7 +29,14 @@ import {
   SESSION_OPENING_CUE,
 } from "../src/lib/prompt";
 import { mergeStageUsage, totalUsage } from "../src/lib/usage";
-import { normalizeEmotion } from "../src/lib/characters";
+import { DEFAULT_CAST, normalizeCast, parseCast, serializeCast } from "../src/lib/cast";
+import {
+  CHARACTER_IDS,
+  CHARACTERS,
+  charactersByGroup,
+  emotionNames,
+  normalizeEmotion,
+} from "../src/lib/characters";
 import { splitByEmotion } from "../src/lib/emotion";
 import { sanitizePersona } from "../src/lib/personas";
 
@@ -322,6 +329,87 @@ test("0단계부터 5단계까지 완주하면 캐릭터가 두 번 바뀐다", 
   ]);
   assert.equal(state.currentStage, 5);
   assert.equal(Object.keys(state.completed).length, 6, "6단계 산출물이 모두 쌓인다");
+});
+
+// ── 1-1. 캐릭터 열 명과 대화구조 ─────────────────────────────
+
+test("캐릭터 열 명이 모두 등록돼 있고 세 갈래로 나뉜다", () => {
+  assert.equal(CHARACTER_IDS.length, 10);
+
+  const groups = charactersByGroup();
+  assert.deepEqual(
+    groups.map((g) => [g.group, g.members.length]),
+    [
+      ["teacher", 1],
+      ["senior", 6],
+      ["expert", 3],
+    ],
+  );
+
+  // 목록에 빠진 사람이 없어야 한다 (CHARACTERS 에만 있고 CHARACTER_IDS 에 없으면 화면에서 사라진다)
+  assert.equal(groups.reduce((n, g) => n + g.members.length, 0), CHARACTER_IDS.length);
+  assert.deepEqual([...CHARACTER_IDS].sort(), Object.keys(CHARACTERS).sort());
+});
+
+test("열 명 모두 감정 열 개와 쓸 수 있는 기본 감정을 갖는다", () => {
+  for (const id of CHARACTER_IDS) {
+    const character = CHARACTERS[id];
+    const names = emotionNames(id);
+
+    assert.equal(names.length, 10, `${id}: 감정이 10개가 아니다 (${names.length}개)`);
+    assert.ok(
+      names.includes(character.defaultEmotion),
+      `${id}: 기본 감정 "${character.defaultEmotion}" 이 목록에 없다`,
+    );
+    // 감정 이름은 [감정:이름] 표식에 들어가므로 파서가 읽을 수 있는 형태여야 한다
+    for (const name of names) {
+      assert.match(name, /^[A-Za-z_][A-Za-z0-9_]*$/, `${id}: 감정 이름 "${name}" 은 못 읽는다`);
+    }
+    // 랜딩에 쓰는 소개가 비어 있으면 안 된다
+    assert.ok(character.tagline.length > 5, `${id}: 한 줄 소개가 없다`);
+    assert.ok(character.subtitle.length > 0, `${id}: 학년·직함이 없다`);
+  }
+});
+
+test("대화구조: 모르는 이름이 섞이면 그 단계만 공장 초기값으로 되돌린다", () => {
+  const messy = normalizeCast({ 0: "teacher", 1: "없는사람", 3: "coach" });
+
+  assert.equal(messy[0], "teacher");
+  assert.equal(messy[1], DEFAULT_CAST[1], "모르는 이름은 공장 초기값으로");
+  assert.equal(messy[3], "coach", "제대로 된 이름은 그대로");
+  assert.equal(messy[5], DEFAULT_CAST[5], "빠진 단계도 공장 초기값으로");
+});
+
+test("대화구조: 깨진 글이 저장돼 있어도 대화가 멈추지 않는다", () => {
+  assert.deepEqual(parseCast("{이건 JSON이 아니다"), DEFAULT_CAST);
+  assert.deepEqual(parseCast(null), DEFAULT_CAST);
+  assert.deepEqual(parseCast(serializeCast(DEFAULT_CAST)), DEFAULT_CAST);
+});
+
+test("대화구조를 바꾸면 배턴터치가 일어나는 자리도 바뀐다", () => {
+  // 공장 초기값: 0단계 선생님 → 1단계 지유 이므로 담당이 바뀐다
+  const asIs = advanceStage(initialQuestState(0), 0, {
+    nickname: "민준",
+    interests: ["자전거"],
+    matchedCharacter: "jiyou",
+  });
+  assert.equal(asIs.ok, true);
+  assert.equal(asIs.characterChanged, true);
+  assert.equal(asIs.nextCharacter, "jiyou");
+
+  // 1단계도 선생님이 맡도록 바꾸면, 배턴터치 없이 그대로 이어진다
+  const sameHand = normalizeCast({ ...DEFAULT_CAST, 1: "teacher" });
+  const changed = advanceStage(
+    initialQuestState(0),
+    0,
+    { nickname: "민준", interests: ["자전거"], matchedCharacter: "jiyou" },
+    Date.now(),
+    undefined,
+    sameHand,
+  );
+  assert.equal(changed.ok, true);
+  assert.equal(changed.characterChanged, false, "같은 사람이 이어받으면 배턴터치가 없다");
+  assert.equal(changed.nextCharacter, "teacher");
 });
 
 test("모든 단계에 담당 캐릭터와 완료 조건이 정의돼 있다", () => {

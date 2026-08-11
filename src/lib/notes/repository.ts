@@ -10,7 +10,7 @@
 
 import "server-only";
 
-import { STAGES } from "@/lib/quest";
+import { castAt } from "@/lib/cast";
 import { supabaseWrite } from "@/lib/supabase";
 import type { SessionState } from "@/types/chat";
 import { buildStagePayload } from "./payload";
@@ -37,7 +37,7 @@ export async function saveNote(session: SessionState): Promise<SaveResult> {
         {
           session_id: session.sessionId,
           nickname: session.nickname,
-          matched_character: STAGES[session.quest.currentStage].character,
+          matched_character: castAt(session.cast, session.quest.currentStage),
           current_stage: session.quest.currentStage,
           completed: session.quest.completed[5] !== undefined,
           stages: buildStagePayload(session),

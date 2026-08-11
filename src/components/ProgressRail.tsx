@@ -4,8 +4,9 @@ import { Check, NotebookPen, ScrollText, Search, Undo2 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { castAt, type Cast } from "@/lib/cast";
 import { getCharacter } from "@/lib/characters";
-import { progressView, STAGES, type QuestState, type StageId } from "@/lib/quest";
+import { progressView, type QuestState, type StageId } from "@/lib/quest";
 import { cn } from "@/lib/utils";
 import type { PanelKind } from "@/hooks/useChat";
 
@@ -22,6 +23,7 @@ const PANEL_TABS: Array<{
 /** 상단 고정 진행판 (PRD S-5) — 0→5단계, 현재 단계 강조 + 우측 패널 전환 */
 export function ProgressRail({
   quest,
+  cast,
   activePanel,
   onSelectPanel,
   available,
@@ -30,6 +32,8 @@ export function ProgressRail({
   canGoBack,
 }: {
   quest: QuestState;
+  /** 이번 대화의 담당 배치 (단계 → 캐릭터) */
+  cast: Cast;
   activePanel: PanelKind | null;
   onSelectPanel: (kind: PanelKind | null) => void;
   available: Record<PanelKind, boolean>;
@@ -41,7 +45,7 @@ export function ProgressRail({
   canGoBack: boolean;
 }) {
   const steps = progressView(quest);
-  const character = getCharacter(STAGES[quest.currentStage].character);
+  const character = getCharacter(castAt(cast, quest.currentStage));
 
   return (
     <header className="no-print sticky top-0 z-20 border-b border-line bg-panel/90 backdrop-blur">

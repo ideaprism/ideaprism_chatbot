@@ -1,4 +1,5 @@
 import type { ProviderId } from "./ai/types";
+import { DEFAULT_CAST, normalizeCast, type Cast } from "./cast";
 import { initialQuestState, STAGES, type StageId } from "./quest";
 import type { NoteEntry, SessionState } from "@/types/chat";
 
@@ -8,8 +9,16 @@ import type { NoteEntry, SessionState } from "@/types/chat";
  */
 export const SESSION_STORAGE_KEY = "ideaprism:session";
 
-/** 새 세션 (익명 — 별명만 받는다) */
-export function createSession(provider: ProviderId | null = null): SessionState {
+/**
+ * 새 세션 (익명 — 별명만 받는다).
+ *
+ * 담당 배치(cast)는 시작할 때 한 번 붙든다. 안 주면 공장 초기값을 쓴다 —
+ * 관리자 설정을 못 읽어도 대화는 시작돼야 하기 때문이다.
+ */
+export function createSession(
+  provider: ProviderId | null = null,
+  cast: Cast = DEFAULT_CAST,
+): SessionState {
   return {
     provider,
     sessionId:
@@ -17,6 +26,7 @@ export function createSession(provider: ProviderId | null = null): SessionState 
         ? crypto.randomUUID()
         : `sess_${Date.now()}_${Math.floor(Math.random() * 1e9)}`,
     nickname: null,
+    cast: normalizeCast(cast),
     quest: initialQuestState(),
     notes: [],
     offTopicCount: 0,

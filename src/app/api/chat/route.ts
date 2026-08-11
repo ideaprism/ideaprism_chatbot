@@ -8,9 +8,11 @@ import {
 } from "@/lib/ai/config";
 import { resolveProvider } from "@/lib/ai/provider";
 import { AiError, type AiMessage, type AiToolResult } from "@/lib/ai/types";
+import { castAt, normalizeCast } from "@/lib/cast";
 import { normalizeEmotion } from "@/lib/characters";
 import { handoffEnterText, operatingRulesTemplate, stageMission } from "@/lib/flow";
 import { saveNote } from "@/lib/notes/repository";
+import { loadCast } from "@/lib/prompts/cast";
 import { loadPersona } from "@/lib/prompts/persona";
 import {
   buildSystemPrompt,
@@ -84,8 +86,15 @@ export async function POST(request: Request) {
     );
   }
 
+  // 대화구조(단계 → 담당)는 세션이 붙들고 간다. 오래된 세션에는 없으므로 지금 설정으로 채운다.
+  // 대화 도중 대표님이 관리자에서 배치를 바꿔도, 이 대화는 원래 만나던 사람과 끝까지 간다.
+  session = {
+    ...session,
+    cast: session.cast ? normalizeCast(session.cast) : await loadCast(),
+  };
+
   const stage = STAGES[session.quest.currentStage];
-  const characterId = stage.character;
+  const characterId = castAt(session.cast, session.quest.currentStage);
 
   let persona: string;
   try {
@@ -104,6 +113,7 @@ export async function POST(request: Request) {
 
   const ctx: TurnContext = {
     quest: session.quest,
+    character: characterId,
     nickname: session.nickname,
     offTopicCount: session.offTopicCount,
     noteDigest: noteDigest(session.notes),

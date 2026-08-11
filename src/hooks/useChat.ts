@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { castAt, DEFAULT_CAST, normalizeCast, type Cast } from "@/lib/cast";
 import { getCharacter, normalizeEmotion, type CharacterId } from "@/lib/characters";
 import type { EmotionMark } from "@/lib/emotion";
-import { canRevisit, revisitStage, STAGES, type StageId } from "@/lib/quest";
+import { canRevisit, revisitStage, type StageId } from "@/lib/quest";
 import { createSession, SESSION_STORAGE_KEY } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
 import type { ChatEvent, ChatMessage, SessionState } from "@/types/chat";
@@ -60,6 +61,20 @@ function newId() {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * 지금 설정된 담당 배치를 받아 온다.
+ * 못 받아도 대화는 시작돼야 하므로 공장 초기값으로 돌아간다.
+ */
+async function fetchCast(): Promise<Cast> {
+  try {
+    const response = await fetch("/api/cast");
+    const data = await response.json();
+    return normalizeCast(data?.cast);
+  } catch {
+    return DEFAULT_CAST;
+  }
+}
+
 export function useChat() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -83,6 +98,8 @@ export function useChat() {
   const sessionRef = useRef<SessionState | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const booted = useRef(false);
+  /** 이번 창에서 쓸 담당 배치 — 새 대화를 시작할 때마다 다시 붙든다 */
+  const castRef = useRef<Cast>(DEFAULT_CAST);
 
   const syncMessages = useCallback((next: ChatMessage[]) => {
     messagesRef.current = next;
@@ -108,7 +125,7 @@ export function useChat() {
       setError(null);
       setStreaming(true);
 
-      const character = STAGES[baseSession.quest.currentStage].character;
+      const character = castAt(baseSession.cast, baseSession.quest.currentStage);
       const assistantId = newId();
 
       // 서버로 보낼 이력은 이번 턴 말풍선을 붙이기 "전" 상태로 만든다
@@ -267,7 +284,7 @@ export function useChat() {
   );
 
   /** 첫 마운트: 저장된 세션을 되살리거나, 새 세션을 만들고 캐릭터가 먼저 말을 걸게 한다 */
-  const bootstrap = useCallback(() => {
+  const bootstrap = useCallback(async () => {
     let restored: { session: SessionState; messages: ChatMessage[] } | null = null;
     try {
       const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
@@ -277,13 +294,22 @@ export function useChat() {
     }
 
     if (restored?.session) {
-      sessionRef.current = restored.session;
-      setSession(restored.session);
+      // 하던 대화는 그때 붙든 배치를 그대로 쓴다 (관리자에서 바뀌었어도)
+      const revived: SessionState = {
+        ...restored.session,
+        cast: normalizeCast(restored.session.cast),
+      };
+      castRef.current = revived.cast;
+      sessionRef.current = revived;
+      setSession(revived);
       syncMessages(restored.messages ?? []);
       return;
     }
 
-    const fresh = createSession();
+    // 새 대화는 시작하기 직전에 지금 설정을 받아 붙든다
+    castRef.current = await fetchCast();
+
+    const fresh = createSession(null, castRef.current);
     sessionRef.current = fresh;
     setSession(fresh);
     void run(null, fresh);
@@ -292,7 +318,7 @@ export function useChat() {
   useEffect(() => {
     if (booted.current) return;
     booted.current = true;
-    bootstrap();
+    void bootstrap();
   }, [bootstrap]);
 
   // 고를 수 있는 모델 목록 (키가 들어 있는 곳만 고를 수 있게 표시)
@@ -321,13 +347,19 @@ export function useChat() {
   );
 
   const restart = useCallback(
-    (provider?: ProviderId | null) => {
+    async (provider?: ProviderId | null) => {
       try {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
       } catch {
         /* 무시 */
       }
-      const fresh = createSession(provider ?? sessionRef.current?.provider ?? null);
+      // 새로 시작하는 대화는 지금 설정을 다시 받는다 (관리자에서 배치가 바뀌었을 수 있다)
+      castRef.current = await fetchCast();
+
+      const fresh = createSession(
+        provider ?? sessionRef.current?.provider ?? null,
+        castRef.current,
+      );
       sessionRef.current = fresh;
       setSession(fresh);
       syncMessages([]);
@@ -352,7 +384,7 @@ export function useChat() {
   const switchProvider = useCallback(
     (provider: ProviderId) => {
       if (sessionRef.current?.provider === provider) return;
-      restart(provider);
+      void restart(provider);
     },
     [restart],
   );

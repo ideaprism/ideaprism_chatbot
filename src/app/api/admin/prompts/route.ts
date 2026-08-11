@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/admin/auth";
 import { FLOW_FILES } from "@/lib/flow";
 import {
+  CONFIG_DOCS,
   flowDocs,
   overriddenAt,
   PERSONA_DOCS,
@@ -24,5 +25,6 @@ export async function GET() {
   return NextResponse.json({
     personas: decorate(PERSONA_DOCS),
     flows: decorate(flowDocs(FLOW_FILES)),
+    configs: decorate(CONFIG_DOCS),
   });
 }

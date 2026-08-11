@@ -89,6 +89,7 @@ export default function ChatPage() {
     <main className="flex h-dvh flex-col">
       <ProgressRail
         quest={session.quest}
+        cast={session.cast}
         activePanel={activePanel}
         onSelectPanel={setActivePanel}
         available={{ search: canSearch, note: hasNote, patent: canPatent }}

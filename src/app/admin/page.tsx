@@ -9,10 +9,14 @@ import {
   Save,
   TriangleAlert,
   UserRound,
+  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { DEFAULT_CAST, parseCast, serializeCast } from "@/lib/cast";
+import { charactersByGroup, CHARACTERS, type CharacterId } from "@/lib/characters";
+import { STAGE_IDS, STAGES, type StageId } from "@/lib/quest";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,7 +27,7 @@ import { cn } from "@/lib/utils";
  */
 
 interface DocSummary {
-  kind: "persona" | "flow";
+  kind: "persona" | "flow" | "config";
   name: string;
   label: string;
   hint: string;
@@ -31,7 +35,7 @@ interface DocSummary {
 }
 
 interface DocDetail {
-  kind: "persona" | "flow";
+  kind: "persona" | "flow" | "config";
   name: string;
   content: string;
   original: string;
@@ -168,10 +172,17 @@ function keyless(doc: DocSummary) {
   return { kind: doc.kind, name: doc.name };
 }
 
+interface DocLists {
+  personas: DocSummary[];
+  flows: DocSummary[];
+  configs: DocSummary[];
+}
+
 function Editor() {
-  const [lists, setLists] = useState<{ personas: DocSummary[]; flows: DocSummary[] }>({
+  const [lists, setLists] = useState<DocLists>({
     personas: [],
     flows: [],
+    configs: [],
   });
   /** 직접 고른 글. 아직 안 골랐으면 첫 글을 보여 준다(아래 active) */
   const [picked, setPicked] = useState<{ kind: string; name: string } | null>(null);
@@ -185,19 +196,26 @@ function Editor() {
   );
   const [showPreview, setShowPreview] = useState(false);
 
-  const active = picked ?? (lists.personas[0] ? keyless(lists.personas[0]) : null);
+  const first = lists.configs[0] ?? lists.personas[0];
+  const active = picked ?? (first ? keyless(first) : null);
   const activeKey = active ? keyOf(active) : null;
 
   const fetchList = useCallback(async () => {
     const response = await fetch("/api/admin/prompts");
     if (!response.ok) return null;
-    return (await response.json()) as { personas: DocSummary[]; flows: DocSummary[] };
+    return (await response.json()) as Partial<DocLists>;
   }, []);
 
   const refreshList = useCallback(() => {
     fetchList()
       .then((data) => {
-        if (data) setLists({ personas: data.personas ?? [], flows: data.flows ?? [] });
+        if (data) {
+          setLists({
+            personas: data.personas ?? [],
+            flows: data.flows ?? [],
+            configs: data.configs ?? [],
+          });
+        }
       })
       .catch(() => {
         /* 목록을 못 받아도 편집 자체에는 지장이 없다 */
@@ -255,8 +273,11 @@ function Editor() {
           text: "저장했어요. 다음 대화부터 바뀐 내용으로 말합니다.",
           at: keyOf(active),
         });
+        // 서버가 정리한 글이 있으면 그걸 기준으로 삼는다 (설정값은 정리 후 저장된다)
+        const saved = typeof data.content === "string" ? data.content : draft;
+        setDraft(saved);
         setDoc((current) =>
-          current ? { ...current, content: draft, edited: true, preview: data.preview } : current,
+          current ? { ...current, content: saved, edited: true, preview: data.preview } : current,
         );
         refreshList();
       }
@@ -296,7 +317,7 @@ function Editor() {
   };
 
   const dirty = loaded && doc !== null && draft !== doc.content;
-  const { personas, flows } = lists;
+  const { personas, flows, configs } = lists;
   const selected = active;
   const setSelected = setPicked;
   const loading = !loaded;
@@ -306,7 +327,9 @@ function Editor() {
       <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-panel px-5 py-3">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-bold tracking-tight">IdeaPrism 관리자</span>
-          <span className="text-[11px] text-neutral-400">캐릭터 대본 · 대화 흐름</span>
+          <span className="text-[11px] text-neutral-400">
+            대화구조 · 캐릭터 대본 · 대화 흐름
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -331,6 +354,14 @@ function Editor() {
       <div className="flex min-h-0 flex-1">
         {/* 왼쪽: 글 목록 */}
         <nav className="scroll-soft w-64 shrink-0 overflow-y-auto border-r border-line bg-panel px-3 py-4">
+          <DocGroup
+            title="대화구조"
+            caption="누가 어느 단계를 맡는가"
+            icon={Workflow}
+            docs={configs}
+            selected={selected}
+            onSelect={setSelected}
+          />
           <DocGroup
             title="캐릭터 대본"
             caption="어떻게 말하는가"
@@ -360,7 +391,11 @@ function Editor() {
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
                 <div className="min-w-0">
                   <h2 className="truncate text-sm font-bold">
-                    {doc.kind === "persona" ? "캐릭터 대본" : "대화 흐름"} · {doc.name}
+                    {doc.kind === "config"
+                      ? "대화구조"
+                      : doc.kind === "persona"
+                        ? `캐릭터 대본 · ${CHARACTERS[doc.name as CharacterId]?.name ?? doc.name}`
+                        : `대화 흐름 · ${doc.name}`}
                   </h2>
                   <p className="mt-0.5 text-[11px] text-neutral-400">
                     {doc.edited
@@ -429,6 +464,8 @@ function Editor() {
                     {doc.preview || "(비어 있음)"}
                   </pre>
                 </div>
+              ) : doc.kind === "config" ? (
+                <CastEditor value={draft} onChange={setDraft} />
               ) : (
                 <textarea
                   value={draft}
@@ -448,6 +485,96 @@ function Editor() {
         </section>
       </div>
     </main>
+  );
+}
+
+/**
+ * 대화구조 편집기 — 단계마다 담당 캐릭터를 고른다.
+ *
+ * 저장되는 값은 JSON이지만 대표님이 JSON을 쓰실 일은 없다.
+ * 고르면 이 화면이 JSON으로 바꿔 준다.
+ *
+ * 완료 조건(언제 다음 단계로 넘어가는가)은 여기서 못 바꾼다 — 프로그램이 판정한다.
+ */
+function CastEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const cast = parseCast(value);
+  const groups = charactersByGroup();
+
+  const pick = (stage: StageId, who: CharacterId) => {
+    onChange(serializeCast({ ...cast, [stage]: who }));
+  };
+
+  return (
+    <div className="scroll-soft min-h-0 flex-1 overflow-y-auto bg-white px-5 py-4">
+      <p className="mb-4 text-[12px] leading-relaxed text-neutral-500">
+        단계마다 누가 맡을지 고릅니다. 담당이 바뀌는 자리에서 <b>배턴터치</b>가 저절로
+        일어납니다.
+        <br />
+        <b>언제 다음 단계로 넘어가는가(완료 조건)는 여기서 못 바꿉니다</b> — 그건 프로그램이
+        판정합니다.
+      </p>
+
+      <ul className="space-y-2">
+        {STAGE_IDS.map((stage) => {
+          const who = CHARACTERS[cast[stage]];
+          const changed = cast[stage] !== DEFAULT_CAST[stage];
+
+          return (
+            <li
+              key={stage}
+              className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel px-3 py-2.5"
+            >
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white tabular-nums">
+                {stage}
+              </span>
+
+              <div className="min-w-[7rem]">
+                <p className="text-sm font-medium">{STAGES[stage].label}</p>
+                <p className="text-[11px] text-neutral-400">{STAGES[stage].doneWhen}</p>
+              </div>
+
+              <div className="ml-auto flex items-center gap-2">
+                {changed && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                    바뀜
+                  </span>
+                )}
+                <span className={cn("text-xs font-semibold", who.theme.accent)}>
+                  {who.subtitle}
+                </span>
+                <select
+                  value={cast[stage]}
+                  onChange={(event) => pick(stage, event.target.value as CharacterId)}
+                  className="rounded-lg border border-line bg-white px-2 py-1.5 text-sm outline-none focus:border-neutral-400"
+                >
+                  {groups.map(({ group, label, members }) => (
+                    <optgroup key={group} label={label}>
+                      {members.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      <p className="mt-4 text-[11px] leading-relaxed text-neutral-400">
+        ※ 저장해도 <b>이미 이야기 중인 학생은 원래 만나던 사람과 끝까지 갑니다.</b>
+        <br />
+        새로 시작하는 대화부터 바뀐 배치로 만납니다.
+      </p>
+    </div>
   );
 }
 

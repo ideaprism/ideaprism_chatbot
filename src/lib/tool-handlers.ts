@@ -11,6 +11,7 @@
 
 import "server-only";
 
+import { castAt } from "./cast";
 import { handoffExitText, stageMission } from "./flow";
 import {
   buildKiprisQuery,
@@ -675,7 +676,7 @@ export async function executeTool(
       if (stage === null) return keep("stage는 0~5 사이의 숫자여야 합니다.", true);
 
       // 승급 전 담당 캐릭터 — 배턴터치 연출에서 "누가 떠나는지" 표시에 쓴다
-      const from = STAGES[session.quest.currentStage].character;
+      const from = castAt(session.cast, session.quest.currentStage);
 
       // AI의 주장이 아니라 프로그램이 실제로 한 일을 넘긴다 (아키텍처 원칙 4).
       // 5단계는 이걸로 "특허를 정말 조회했는가"를 판정한다.
@@ -684,7 +685,14 @@ export async function executeTool(
           ? { kiprisQuery: session.patent.query, kiprisTotal: session.patent.totalCount }
           : NO_EVIDENCE;
 
-      const outcome = advanceStage(session.quest, stage, args.artifact, Date.now(), evidence);
+      const outcome = advanceStage(
+        session.quest,
+        stage,
+        args.artifact,
+        Date.now(),
+        evidence,
+        session.cast,
+      );
 
       if (!outcome.ok) {
         // 실패해도 재시도 횟수는 올라간다 (막힘 신호 기록)

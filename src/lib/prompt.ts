@@ -101,6 +101,8 @@ export function buildSystemPrompt(
 
 export interface TurnContext {
   quest: QuestState;
+  /** 이번 턴을 맡은 캐릭터 (대화구조에서 정해진다) */
+  character: CharacterId;
   nickname: string | null;
   /** 발명 외 주제로 샌 횟수 (PRD F-8) */
   offTopicCount: number;
@@ -123,7 +125,9 @@ export function buildTurnBriefing(ctx: TurnContext): string {
   const lines: string[] = [];
 
   lines.push("<운영지침>");
-  lines.push(`현재 단계: ${stage.id}단계 「${stage.label}」 (담당: ${stage.character})`);
+  lines.push(
+    `현재 단계: ${stage.id}단계 「${stage.label}」 (담당: ${getCharacter(ctx.character).name})`,
+  );
   lines.push(`완료 조건: ${stage.doneWhen}`);
   lines.push("");
   lines.push("이번 단계에서 할 일:");

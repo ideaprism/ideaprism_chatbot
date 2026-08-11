@@ -1,4 +1,5 @@
 import type { ProviderId } from "@/lib/ai/types";
+import type { Cast } from "@/lib/cast";
 import type { CharacterId } from "@/lib/characters";
 import type { EmotionMark } from "@/lib/emotion";
 import type { QuestState, StageId } from "@/lib/quest";
@@ -31,6 +32,11 @@ export interface SessionState {
    */
   provider: ProviderId | null;
   nickname: string | null;
+  /**
+   * 이번 대화의 담당 배치 (단계 → 캐릭터).
+   * 세션을 시작할 때 관리자 설정을 붙든다. 도중에 설정이 바뀌어도 이 대화는 안 바뀐다.
+   */
+  cast: Cast;
   quest: QuestState;
   notes: NoteEntry[];
   offTopicCount: number;
