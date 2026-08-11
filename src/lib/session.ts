@@ -27,6 +27,7 @@ export function createSession(
         : `sess_${Date.now()}_${Math.floor(Math.random() * 1e9)}`,
     nickname: null,
     cast: normalizeCast(cast),
+    guest: null,
     quest: initialQuestState(),
     notes: [],
     offTopicCount: 0,

@@ -26,6 +26,8 @@ const TOOL_LABEL: Record<ToolName, string> = {
   search_kipris: "특허 찾아보는 중",
   update_note: "발명노트에 적는 중",
   complete_stage: "단계 완료 확인 중",
+  call_expert: "전문가 부르는 중",
+  send_off_expert: "전문가 배웅하는 중",
 };
 
 export function MessageList({

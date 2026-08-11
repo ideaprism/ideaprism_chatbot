@@ -31,6 +31,8 @@ import {
 import { mergeStageUsage, totalUsage } from "../src/lib/usage";
 import {
   DEFAULT_CAST,
+  EXPERT_IDS,
+  isExpertId,
   normalizeCast,
   parseCast,
   serializeCast,
@@ -399,18 +401,31 @@ test("대화구조: 모르는 이름이 섞이면 그 단계만 공장 초기값
   assert.deepEqual(messy[5], DEFAULT_CAST[5], "빠진 단계도 공장 초기값으로");
 });
 
-test("0단계에서 짝지어 준 친구 둘이 1~4단계에 앉는다", () => {
+test("0단계에서 짝지어 준 친구 둘이 1~5단계를 함께 간다", () => {
   const seated = withFriends(DEFAULT_CAST, ["daon", "harin"]);
 
   assert.deepEqual(seated[0], ["teacher"], "0단계는 선생님 그대로");
-  for (const stage of [1, 2, 3, 4] as const) {
+  for (const stage of [1, 2, 3, 4, 5] as const) {
     assert.deepEqual(seated[stage], ["daon", "harin"], `${stage}단계에 둘이 앉는다`);
   }
-  assert.deepEqual(seated[5], ["detective"], "5단계는 특허 탐정 그대로");
+  // 5단계의 특허 탐정은 자리를 차지하는 게 아니라 친구가 불러오는 손님이다
+  assert.ok(!seated[5].includes("detective"), "탐정은 배치가 아니라 손님으로 온다");
 
   // 짝이 없거나 엉뚱하면 원래 배치를 건드리지 않는다
   assert.deepEqual(withFriends(DEFAULT_CAST, undefined), DEFAULT_CAST);
   assert.deepEqual(withFriends(DEFAULT_CAST, ["없는사람"]), DEFAULT_CAST);
+});
+
+test("손님으로 부를 수 있는 사람은 전문가 셋뿐이다", () => {
+  assert.deepEqual(EXPERT_IDS, ["detective", "coach", "jiwon"]);
+
+  assert.ok(isExpertId("detective"));
+  assert.ok(isExpertId("coach"));
+  assert.ok(isExpertId("jiwon"));
+  // 선생님과 선배는 손님이 아니다 — 부르는 도구로 불러낼 수 없다
+  assert.ok(!isExpertId("teacher"));
+  assert.ok(!isExpertId("jiyou"));
+  assert.ok(!isExpertId("없는사람"));
 });
 
 test("0단계: 친구를 한 명만 적거나 선배가 아니면 넘어가지 못한다", () => {

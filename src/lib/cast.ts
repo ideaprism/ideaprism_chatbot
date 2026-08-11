@@ -32,8 +32,21 @@ export const DEFAULT_CAST: Cast = Object.fromEntries(
   STAGE_IDS.map((id) => [id, [STAGES[id].character]]),
 ) as Cast;
 
-/** 친구를 짝지어 줄 수 있는 단계 — 0단계(선생님)와 5단계(탐정)는 빼고 */
-export const FRIEND_STAGES: StageId[] = [1, 2, 3, 4];
+/**
+ * 짝지어 준 친구가 함께 가는 단계 — 0단계(선생님)를 뺀 전부.
+ *
+ * 5단계도 친구들이 맡는다. 특허 탐정은 그 자리에서 **친구가 불러오는 손님**이다
+ * (`call_expert` 도구). 선배가 "이건 탐정님이 잘 아셔" 하고 부르는 그림이
+ * 배턴터치로 선배가 사라지는 것보다 자연스럽다.
+ */
+export const FRIEND_STAGES: StageId[] = [1, 2, 3, 4, 5];
+
+/** 불러올 수 있는 전문가 — 교사·선배는 손님이 아니다 */
+export const EXPERT_IDS: CharacterId[] = ["detective", "coach", "jiwon"];
+
+export function isExpertId(value: unknown): value is CharacterId {
+  return typeof value === "string" && EXPERT_IDS.includes(value as CharacterId);
+}
 
 /** 값 하나를 사람 목록으로 정리한다. 비면 null */
 function tidyMembers(value: unknown): StageCast | null {

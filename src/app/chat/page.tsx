@@ -90,6 +90,7 @@ export default function ChatPage() {
       <ProgressRail
         quest={session.quest}
         cast={session.cast}
+        guest={session.guest}
         activePanel={activePanel}
         onSelectPanel={setActivePanel}
         available={{ search: canSearch, note: hasNote, patent: canPatent }}

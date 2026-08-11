@@ -11,7 +11,8 @@
 
 import "server-only";
 
-import { castAt, hostAt, withFriends } from "./cast";
+import { castAt, EXPERT_IDS, hostAt, isExpertId, withFriends } from "./cast";
+import { getCharacter } from "./characters";
 import { handoffExitText, stageMission } from "./flow";
 import {
   buildKiprisQuery,
@@ -671,6 +672,53 @@ export async function executeTool(
       };
     }
 
+    case "call_expert": {
+      // 목록에 없는 사람은 부르지 못한다 — 교사·선배는 손님이 아니다 (아키텍처 원칙 1)
+      if (!isExpertId(args.expert)) {
+        return keep(
+          `부를 수 있는 전문가는 ${EXPERT_IDS.join(", ")} 뿐입니다. ` +
+            "선배나 선생님은 이 도구로 부를 수 없습니다.",
+          true,
+        );
+      }
+
+      if (session.guest === args.expert) {
+        return keep(
+          `${getCharacter(args.expert).name}은(는) 이미 와 있습니다. ` +
+            "다시 부르지 말고 [말:" +
+            args.expert +
+            "] 표식으로 바로 말을 건네세요.",
+          true,
+        );
+      }
+
+      const next: SessionState = { ...session, guest: args.expert };
+      const who = getCharacter(args.expert);
+      return {
+        result:
+          `${who.name}이(가) 대화에 들어왔습니다. 이제 [말:${args.expert}] 표식으로 ` +
+          `직접 말하게 할 수 있습니다. 먼저 짧게 등장 인사를 시키고, ` +
+          `무엇 때문에 불렀는지 학생에게 한 문장으로 짚어 주세요.`,
+        session: next,
+        events: [{ type: "state", session: next }],
+        isError: false,
+      };
+    }
+
+    case "send_off_expert": {
+      if (!session.guest) {
+        return keep("지금 와 있는 전문가가 없습니다.", true);
+      }
+      const who = getCharacter(session.guest);
+      const next: SessionState = { ...session, guest: null };
+      return {
+        result: `${who.name}이(가) 돌아갔습니다. 이제 원래 사람들끼리 대화를 이어가세요.`,
+        session: next,
+        events: [{ type: "state", session: next }],
+        isError: false,
+      };
+    }
+
     case "complete_stage": {
       const stage = asStage(args.stage);
       if (stage === null) return keep("stage는 0~5 사이의 숫자여야 합니다.", true);
@@ -716,7 +764,15 @@ export async function executeTool(
           ? artifactRecord.nickname.trim()
           : session.nickname;
 
-      const next: SessionState = { ...session, quest: outcome.state, nickname, cast };
+      // 단계가 바뀌면 불려 와 있던 전문가는 돌아간다 —
+      // 앞 단계 이야기 하러 온 사람이 다음 단계까지 따라다니면 대화가 무거워진다
+      const next: SessionState = {
+        ...session,
+        quest: outcome.state,
+        nickname,
+        cast,
+        guest: stage === outcome.nextStage ? session.guest : null,
+      };
       const events: ChatEvent[] = [];
 
       // 승급 후 AI에게 줄 안내는 flow/*.md 에서 가져온다 (대표님이 고치는 파일).

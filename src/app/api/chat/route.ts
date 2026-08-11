@@ -94,21 +94,19 @@ export async function POST(request: Request) {
   };
 
   const stage = STAGES[session.quest.currentStage];
-  // 이 단계에 함께 있는 사람들. 첫 번째가 이끌고, 둘이면 서로 주고받는다.
+  // 지금 이 자리에 있는 목소리들 — 짝지어 준 친구들 + 불려 온 전문가(손님).
+  // 첫 번째가 이 단계를 이끈다.
   const crew = castAt(session.cast, session.quest.currentStage);
-  const characterId = crew[0];
-  const companionId = crew[1] ?? null;
+  const guest = session.guest && !crew.includes(session.guest) ? session.guest : null;
+  const voices = guest ? [...crew, guest] : crew;
+  const characterId = voices[0];
 
-  let persona: string;
-  let companionPersona: string | null = null;
+  let personas: string[];
   try {
-    [persona, companionPersona] = await Promise.all([
-      loadPersona(characterId),
-      companionId ? loadPersona(companionId) : Promise.resolve(null),
-    ]);
+    personas = await Promise.all(voices.map((id) => loadPersona(id)));
   } catch (error) {
     console.error("[chat] 페르소나 로딩 실패", error);
-    return fail(`페르소나 파일을 읽지 못했습니다 (${crew.join(", ")}).`, 500);
+    return fail(`페르소나 파일을 읽지 못했습니다 (${voices.join(", ")}).`, 500);
   }
 
   // 대화 흐름 지침은 flow/*.md 에서 읽는다 (대표님이 직접 고치는 파일).
@@ -169,11 +167,9 @@ export async function POST(request: Request) {
 
   const system = buildSystemPrompt(
     characterId,
-    persona,
+    personas[0],
     rulesTemplate,
-    companionId && companionPersona
-      ? { id: companionId, personaText: companionPersona }
-      : null,
+    voices.slice(1).map((id, index) => ({ id, personaText: personas[index + 1] })),
   );
   const tools = toolsForStage(session.quest.currentStage);
 
@@ -182,7 +178,13 @@ export async function POST(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const emotionParser = createEmotionParser();
-      /** 지금 말하고 있는 사람. 둘이 함께 있으면 [말:id] 로 바뀐다 */
+      /**
+       * 지금 이 턴에 말할 수 있는 사람들.
+       * 턴 도중에 call_expert 로 손님이 오면 늘어난다 — 안 그러면 부른 그 턴에
+       * 손님이 남의 얼굴로 말하게 된다. (대본은 다음 턴부터 들어온다)
+       */
+      let liveVoices = [...voices];
+      /** 지금 말하고 있는 사람. 여럿이면 [말:id] 로 바뀐다 */
       let speaker = characterId;
       /** 방금 내보낸 감정. 같은 감정이 잇달아 나오면 화면을 쪼갤 이유가 없다 */
       let lastEmotion: string | null = null;
@@ -210,7 +212,7 @@ export async function POST(request: Request) {
 
           if (part.kind === "speaker") {
             // 이 단계에 없는 사람 이름을 적어 냈으면 버린다 (아키텍처 원칙 4)
-            if (!isCharacterId(part.speaker) || !crew.includes(part.speaker)) continue;
+            if (!isCharacterId(part.speaker) || !liveVoices.includes(part.speaker)) continue;
             if (part.speaker === speaker) continue;
             speaker = part.speaker;
             lastEmotion = null; // 감정 이름은 사람마다 다르다 — 새로 시작한다
@@ -281,6 +283,13 @@ export async function POST(request: Request) {
             const outcome = await executeTool(call.name, call.input, session);
             session = outcome.session;
             for (const extra of outcome.events) send(extra);
+
+            // 손님이 오갔으면 이 턴부터 바로 말할 수 있게 해 준다
+            liveVoices = session.guest ? [...crew, session.guest] : [...crew];
+            if (!liveVoices.includes(speaker)) {
+              speaker = characterId;
+              lastEmotion = null;
+            }
 
             if (toolName) {
               send({

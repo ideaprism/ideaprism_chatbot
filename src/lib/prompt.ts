@@ -87,10 +87,10 @@ export function buildSystemPrompt(
   /** flow/공통규칙.md 원문. 없으면 코드에 든 기본 규칙을 쓴다 */
   rulesTemplate?: string | null,
   /**
-   * 이 단계에 함께 있는 다른 사람 (둘이 함께 있는 단계).
-   * 있으면 그 사람의 대본도 함께 넣고, 화자를 바꾸는 법을 알려 준다.
+   * 함께 있는 다른 사람들 — 짝지어 준 친구, 불려 온 전문가.
+   * 있으면 그 사람들의 대본도 함께 넣고, 화자를 바꾸는 법을 알려 준다.
    */
-  companion?: { id: CharacterId; personaText: string } | null,
+  companions: Array<{ id: CharacterId; personaText: string }> = [],
 ): string[] {
   const character = getCharacter(characterId);
   const rules = rulesTemplate
@@ -102,12 +102,16 @@ export function buildSystemPrompt(
     : defaultOperatingRules(characterId);
 
   const pieces = [rules, `# 캐릭터 대본 — ${character.name} (${characterId})\n\n${personaText}`];
-  if (companion) {
+
+  for (const companion of companions) {
     pieces.push(
-      `# 함께 있는 친구의 대본 — ${getCharacter(companion.id).name} (${companion.id})\n\n` +
-        `${companion.personaText}\n\n` +
-        duetRules(characterId, companion.id),
+      `# 함께 있는 사람의 대본 — ${getCharacter(companion.id).name} (${companion.id})\n\n` +
+        companion.personaText,
     );
+  }
+
+  if (companions.length > 0) {
+    pieces.push(duetRules(characterId, companions.map((one) => one.id)));
   }
   return pieces;
 }
@@ -118,26 +122,28 @@ export function buildSystemPrompt(
  * 화면은 `[말:id]` 가 나온 자리에서 말풍선을 갈라 각자의 얼굴을 붙인다.
  * 그래서 표식 없이 이름만 적으면 한 사람이 다른 사람 흉내를 내는 꼴이 된다.
  */
-function duetRules(hostId: CharacterId, companionId: CharacterId): string {
-  const host = getCharacter(hostId);
-  const companion = getCharacter(companionId);
+function duetRules(hostId: CharacterId, companionIds: CharacterId[]): string {
+  const everyone = [hostId, ...companionIds];
+  const names = everyone.map((id) => getCharacter(id).name).join(", ");
+  const palette = everyone
+    .map((id) => `  · ${getCharacter(id).name} → [말:${id}] · 감정: ${emotionNames(id).join(", ")}`)
+    .join("\n");
 
-  return `## 둘이 함께 말하기 (반드시 지킬 것)
+  return `## 여럿이 함께 말하기 (반드시 지킬 것)
 
-이 단계에는 **${host.name}과(와) ${companion.name} 둘이 함께** 학생과 이야기한다.
-너는 두 사람을 모두 연기하되, **말하는 사람이 바뀌는 자리마다 표식을 찍는다.**
+지금 이 자리에는 **${names}** 이(가) 학생과 함께 있다.
+너는 이 사람들을 모두 연기하되, **말하는 사람이 바뀌는 자리마다 표식을 찍는다.**
 
-- 형식: [말:${hostId}] 또는 [말:${companionId}]
-- 표식 뒤에는 그 사람의 감정 태그를 이어 쓴다. 예: [말:${companionId}] [감정:...] 대사
-- 감정 이름은 **사람마다 다르다.** 그 사람 대본에 있는 이름만 쓴다.
-  · ${host.name}: ${emotionNames(hostId).join(", ")}
-  · ${companion.name}: ${emotionNames(companionId).join(", ")}
+- 형식: [말:id] — 표식 뒤에 그 사람의 감정 태그를 이어 쓴다. 예: [말:${everyone[1]}] [감정:...] 대사
+- 감정 이름은 **사람마다 다르다.** 그 사람 것만 쓴다.
+${palette}
 - 표식 없이 "○○이가 말했다" 처럼 남의 말을 대신 옮기지 않는다. 표식을 찍고 직접 말하게 한다.
-- 한 번에 한 사람이 서너 문장씩. 둘이 번갈아 쏟아내면 학생이 낄 틈이 없다.
-- **둘이 매번 다 말할 필요는 없다.** 한 사람만 답해도 되고, 보탤 말이 있을 때만 끼어든다.
+- 한 번에 한 사람이 서너 문장씩. 번갈아 쏟아내면 학생이 낄 틈이 없다.
+- **매번 다 말할 필요는 없다.** 한 사람만 답해도 되고, 보탤 말이 있을 때만 끼어든다.
 - 서로 다른 시각을 보여 준다. 똑같은 말을 두 번 하지 않는다.
 - 도구(리모컨)를 부르는 것은 사람과 상관없다. 필요하면 누구든 부른다.
-- 학생에게 하는 질문은 **한 번에 하나**다. 둘이 각각 물으면 두 개가 된다.`;
+- 학생에게 하는 질문은 **한 번에 하나**다. 각각 물으면 여러 개가 된다.
+- 위 목록에 **없는 사람의 표식은 화면이 버린다.** 다른 사람이 필요하면 call_expert 로 부른다.`;
 }
 
 export interface TurnContext {

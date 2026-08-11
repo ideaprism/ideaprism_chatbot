@@ -22,7 +22,9 @@ export type ToolName =
   | "generate_kipris_query"
   | "search_kipris"
   | "update_note"
-  | "complete_stage";
+  | "complete_stage"
+  | "call_expert"
+  | "send_off_expert";
 
 /** 현재 실제로 동작하는 도구 (제작 단계가 올라가면 여기에 추가) */
 export const IMPLEMENTED_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
@@ -34,6 +36,8 @@ export const IMPLEMENTED_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
   "search_kipris",
   "update_note",
   "complete_stage",
+  "call_expert",
+  "send_off_expert",
 ]);
 
 export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
@@ -252,15 +256,52 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
       additionalProperties: false,
     },
   },
+
+  call_expert: {
+    name: "call_expert",
+    description:
+      "전문가를 대화에 불러온다. 부르면 그 사람의 대본이 들어와 [말:id] 표식으로 직접 말할 수 있다.\n" +
+      "- detective (특허 탐정) — 비슷한 특허를 찾고 신규성을 가린다. **특허를 찾을 때는 반드시 먼저 부른다.**\n" +
+      "- coach (사업 코치) — 시장성·실현 가능성. 학생이 '팔 수 있을까' 류를 물을 때\n" +
+      "- jiwon (기업 연구원) — 기술 구조·구체화. 학생이 '어떻게 만들지'를 깊게 물을 때\n" +
+      "coach 와 jiwon 은 **학생이 원하거나 정말 필요할 때만** 부른다. 아무 때나 부르면 대화가 산만해진다.\n" +
+      "부르기 전에 학생에게 한 마디 예고한다: \"이건 ○○님이 잘 아셔, 불러올까?\"\n" +
+      "한 번에 한 명만 와 있을 수 있다. 이미 와 있으면 그 사람이 돌아가고 새 사람이 온다.",
+    parameters: {
+      type: "object",
+      properties: {
+        expert: {
+          type: "string",
+          enum: ["detective", "coach", "jiwon"],
+          description: "부를 전문가",
+        },
+        reason: {
+          type: "string",
+          description: "왜 부르는지 한 문장. 학생에게 그대로 보이지는 않는다.",
+        },
+      },
+      required: ["expert"],
+      additionalProperties: false,
+    },
+  },
+
+  send_off_expert: {
+    name: "send_off_expert",
+    description:
+      "불러온 전문가를 돌려보낸다. 할 일이 끝났는데도 계속 남아 있으면 대화가 무거워진다. " +
+      "돌려보내기 전에 고맙다는 인사를 건넨다. 단계가 바뀌면 자동으로 돌아가므로 그때는 부를 필요가 없다.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
 };
 
 /** 단계별로 노출할 도구 목록 (아직 구현 안 된 도구는 자동으로 걸러진다) */
 const STAGE_TOOLS: Record<StageId, ToolName[]> = {
+  // 0단계는 선생님이 학생을 알아보는 자리다. 전문가를 부를 일이 없다.
   0: ["complete_stage"],
-  1: ["search_inventions", "apply_filters", "get_statistics", "show_invention", "update_note", "complete_stage"],
-  2: ["search_inventions", "apply_filters", "get_statistics", "update_note", "complete_stage"],
-  3: ["search_inventions", "apply_filters", "get_statistics", "show_invention", "update_note", "complete_stage"],
-  4: ["update_note", "complete_stage"],
+  1: ["search_inventions", "apply_filters", "get_statistics", "show_invention", "update_note", "complete_stage", "call_expert", "send_off_expert"],
+  2: ["search_inventions", "apply_filters", "get_statistics", "update_note", "complete_stage", "call_expert", "send_off_expert"],
+  3: ["search_inventions", "apply_filters", "get_statistics", "show_invention", "update_note", "complete_stage", "call_expert", "send_off_expert"],
+  4: ["update_note", "complete_stage", "call_expert", "send_off_expert"],
   // 5단계도 발명 검색이 필요하다 — 기초 검색식으로 삼을 비슷한 선배 발명을 먼저 골라야 한다
   5: [
     "search_inventions",
@@ -270,6 +311,8 @@ const STAGE_TOOLS: Record<StageId, ToolName[]> = {
     "search_kipris",
     "update_note",
     "complete_stage",
+    "call_expert",
+    "send_off_expert",
   ],
 };
 

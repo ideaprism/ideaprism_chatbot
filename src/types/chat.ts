@@ -37,6 +37,11 @@ export interface SessionState {
    * 세션을 시작할 때 관리자 설정을 붙든다. 도중에 설정이 바뀌어도 이 대화는 안 바뀐다.
    */
   cast: Cast;
+  /**
+   * 지금 불려 와 있는 전문가 (손님). 없으면 null.
+   * 선배가 `call_expert` 로 부르고 `send_off_expert` 로 보낸다. 단계가 바뀌면 자동으로 돌아간다.
+   */
+  guest: CharacterId | null;
   quest: QuestState;
   notes: NoteEntry[];
   offTopicCount: number;

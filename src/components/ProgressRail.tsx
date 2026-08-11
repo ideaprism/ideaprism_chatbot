@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 
 import { Wordmark } from "./Wordmark";
 import { castAt, type Cast } from "@/lib/cast";
-import { getCharacter } from "@/lib/characters";
+import { getCharacter, type CharacterId } from "@/lib/characters";
 import { progressView, type QuestState, type StageId } from "@/lib/quest";
 import { cn } from "@/lib/utils";
 import type { PanelKind } from "@/hooks/useChat";
@@ -25,6 +25,7 @@ const PANEL_TABS: Array<{
 export function ProgressRail({
   quest,
   cast,
+  guest,
   activePanel,
   onSelectPanel,
   available,
@@ -35,6 +36,8 @@ export function ProgressRail({
   quest: QuestState;
   /** 이번 대화의 담당 배치 (단계 → 캐릭터) */
   cast: Cast;
+  /** 지금 불려 와 있는 전문가 (없으면 null) */
+  guest: CharacterId | null;
   activePanel: PanelKind | null;
   onSelectPanel: (kind: PanelKind | null) => void;
   available: Record<PanelKind, boolean>;
@@ -47,7 +50,9 @@ export function ProgressRail({
 }) {
   const steps = progressView(quest);
   // 한 단계에 둘이 함께 있을 수 있다 (0단계에서 선생님이 친구 둘을 짝지어 준다)
-  const crew = castAt(cast, quest.currentStage).map(getCharacter);
+  const members = castAt(cast, quest.currentStage);
+  const crew = members.map(getCharacter);
+  const visitor = guest && !members.includes(guest) ? getCharacter(guest) : null;
 
   return (
     <header className="no-print sticky top-0 z-20 border-b border-line bg-panel/90 backdrop-blur">
@@ -66,6 +71,14 @@ export function ProgressRail({
               <span className={cn("font-medium", member.theme.accent)}>{member.name}</span>
             </span>
           ))}
+          {/* 불려 온 전문가는 잠깐 와 있는 손님이라 따로 표시한다 */}
+          {visitor && (
+            <>
+              {" + "}
+              <span className={cn("font-medium", visitor.theme.accent)}>{visitor.name}</span>
+              <span className="text-neutral-400"> (와 있음)</span>
+            </>
+          )}
         </p>
 
         {providerPicker}
