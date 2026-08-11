@@ -48,9 +48,9 @@
 
 ## 시작 상태 (2026-08-12 갱신)
 
-P0~P5 + 그 위에 얹은 것들까지 구현 완료. 배포본은 `16dab9a`,
-**로컬은 학습 프로그램 스튜디오 1단계만큼 앞서 있다(아직 push 안 함).**
+P0~P5 + 그 위에 얹은 것들까지 구현 완료. **로컬·GitHub·Vercel 전부 동기화(`3c7495d`).**
 https://ideaprism-chatbot.vercel.app · https://github.com/ideaprism/ideaprism_chatbot
+(배포본은 **입장코드**로 잠겨 있다 — 기본 `7117`, 관리자에서 변경)
 
 굵직한 것만:
 
