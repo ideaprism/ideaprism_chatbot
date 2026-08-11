@@ -17,6 +17,38 @@ export const dynamic = "force-dynamic";
 
 type Check = { ok: boolean; detail: string };
 
+/** 점검이 쓰고 지우는 자리 — 실제 문서 이름과 겹치지 않는다 */
+const PROBE_NAME = "__점검";
+
+/**
+ * 저장이 정말 되는지 한 줄 써 보고 지운다.
+ *
+ * 표가 읽히는 것과 쓸 수 있는 것은 다른 문제다. 실제로 표는 멀쩡히 읽히는데
+ * `kind` 규칙에 `config` 가 빠져 있어 **설정값 저장만** 거부된 적이 있다
+ * (대화구조·입장코드). 그때 점검은 초록이었다.
+ *
+ * 그래서 관리자가 저장할 때와 **같은 종류(`config`)로** 써 본다.
+ * 문제가 없으면 null, 있으면 무엇 때문에 막혔는지 돌려준다.
+ *
+ * 남는 줄이 없도록 지우지만, 지우기가 실패해도 해가 없다 —
+ * 이 이름을 찾아 읽는 코드가 없다(`readPrompt` 는 정해진 이름만 묻는다).
+ */
+async function probeWrite(): Promise<string | null> {
+  const db = supabaseWrite();
+
+  const { error } = await db
+    .from("prompt_overrides")
+    .upsert(
+      { kind: "config", name: PROBE_NAME, content: "점검용 — 곧 지워집니다" },
+      { onConflict: "kind,name" },
+    );
+
+  if (error) return error.message;
+
+  await db.from("prompt_overrides").delete().eq("kind", "config").eq("name", PROBE_NAME);
+  return null;
+}
+
 export async function GET() {
   const checks: Record<string, Check> = {};
 
@@ -84,23 +116,41 @@ export async function GET() {
   // ※ head:true 로 개수만 세는 조회는 표가 아예 없어도 오류를 돌려주지 않는다(실측).
   //   그러면 표가 없는데도 점검이 초록으로 나온다. 그래서 행을 실제로 받아 본다.
   //   (많아야 12줄짜리 표라 부담이 없다)
+  //
+  // ※ **읽히는 것만으로는 모자란다.** 표가 멀쩡히 읽히는데 저장만 거부된 적이 있다 —
+  //   kind 에 허용된 값 목록에 'config' 가 빠져 있어서, 대화구조와 입장코드를
+  //   저장할 때만 막혔다(2026-08-12, 대표님이 입장코드를 바꾸다 발견).
+  //   점검은 "준비됨" 초록이었다. 그래서 이제 **실제로 한 줄 써 보고 지운다.**
   try {
     const { data, error } = await supabaseWrite().from("prompt_overrides").select("kind, name");
     const count = data?.length ?? 0;
-    checks.promptOverrides = error
-      ? {
-          ok: false,
-          detail:
-            "prompt_overrides 표가 없습니다 — supabase/prompt_overrides.sql 을 " +
-            "Supabase에서 실행하면 관리자 페이지의 저장이 켜집니다 (지금은 파일 원본으로 동작)",
-        }
-      : {
-          ok: true,
-          detail:
-            count > 0
-              ? `고쳐 둔 글 ${count}개 — 파일 대신 이 값이 쓰입니다`
-              : "표 준비됨 — 아직 고친 글은 없고 파일 원본으로 동작 중",
-        };
+
+    if (error) {
+      checks.promptOverrides = {
+        ok: false,
+        detail:
+          "prompt_overrides 표가 없습니다 — supabase/prompt_overrides.sql 을 " +
+          "Supabase에서 실행하면 관리자 페이지의 저장이 켜집니다 (지금은 파일 원본으로 동작)",
+      };
+    } else {
+      const wrote = await probeWrite();
+      checks.promptOverrides = wrote
+        ? {
+            ok: false,
+            detail:
+              `표는 읽히는데 저장이 거부됩니다: ${wrote}. ` +
+              "supabase/prompt_overrides_kind_config.sql 을 Supabase에서 실행해 주세요. " +
+              "(대화는 공장 초기값으로 정상 동작합니다)",
+          }
+        : {
+            ok: true,
+            detail:
+              (count > 0
+                ? `고쳐 둔 글 ${count}개 — 파일 대신 이 값이 쓰입니다`
+                : "표 준비됨 — 아직 고친 글은 없고 파일 원본으로 동작 중") +
+              " · 저장도 실제로 해 보고 지웠습니다",
+          };
+    }
   } catch {
     checks.promptOverrides = {
       ok: false,

@@ -298,7 +298,7 @@ React Flow(`@xyflow/react`)로 파이프라인을 그리고 **노드를 클릭�
 ECOSYSTEM.md  세 서비스(1.0·2.0·3.0)의 목적·연결·영향 지도   ← 작업 전 필독
 personas/     캐릭터 대본 10개 (공장 초기값) — /admin 에서도 고침
 flow/         대화 흐름 지침 9개 (공장 초기값)
-supabase/     invention_notes · prompt_overrides DDL (둘 다 적용됨)
+supabase/     invention_notes · prompt_overrides DDL + kind 에 config 추가 (셋 다 적용됨)
 tests/        회귀 테스트 137개 (core · track · entry · notes · usage · kipris · search …)
 src/app/
   page.tsx            랜딩 (1.0 디자인 토큰, 10명 3그룹) + 입장코드 입력칸
@@ -514,6 +514,14 @@ src/lib/
 - **Supabase에서 `head: true` 로 개수만 세는 조회는 표가 아예 없어도 오류를 안 준다.**
   그래서 `/api/health` 가 없는 표를 두고 "준비됨"이라 초록으로 보고했다.
   행을 실제로 받아 보게 고쳤다. 새 점검 항목을 만들 때 또 밟기 쉽다.
+- **읽히는 것과 쓸 수 있는 것은 다른 문제다 — 위 함정의 사촌.**
+  `prompt_overrides` 의 `kind` 규칙에 `'config'` 가 빠져 있어 **설정값 저장만** 거부됐다
+  (대화구조·입장코드). 표는 멀쩡히 읽혔고 점검도 초록이었다. 대화는 공장 초기값으로
+  잘 돌아서 **아무도 몰랐다** — 대표님이 입장코드를 바꾸려다 발견했다(2026-08-12).
+  → 고침: `supabase/prompt_overrides_kind_config.sql`. 원본 DDL도 함께 고쳤다.
+  → 점검이 이제 **`config` 로 한 줄 실제로 써 보고 지운다**(`probeWrite`).
+  **`create table if not exists` 는 이미 있는 표의 규칙을 고치지 않는다.**
+  표 구조를 바꿀 때는 원본 DDL만 고치지 말고 **따로 ALTER 파일을 낼 것.**
 - **Vercel 프로젝트의 Framework Preset이 "Other"면** 빌드는 성공하는데 `public/` 만
   배포되고 앱 전체가 404가 난다. `nextjs` 로 맞춰야 한다.
 - **검색어가 너무 넓으면 조회가 시간 초과된다.** `우산` 한 낱말은 14,461건을 훑다
