@@ -9,8 +9,13 @@ import type { ToolName } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/types/chat";
 
-/** 감정 그림 한 변의 길이(px). 원본이 정사각형이라 가로=세로다 */
-const AVATAR_SIZE = 200;
+/**
+ * 감정 그림 한 변의 길이(px). 원본이 정사각형이라 가로=세로다.
+ *
+ * 200으로 뒀더니 우측 패널이 열렸을 때(채팅이 36%로 줄어든다) 말풍선이
+ * 그림과 같은 199px까지 눌려 한 줄에 열 글자밖에 안 들어갔다.
+ */
+const AVATAR_SIZE = 120;
 
 const TOOL_LABEL: Record<ToolName, string> = {
   search_inventions: "선배 발명 찾아보는 중",

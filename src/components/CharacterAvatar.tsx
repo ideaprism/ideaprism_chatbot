@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 export function CharacterAvatar({
   character,
   emotion,
-  size = 200,
+  size = 120,
   className,
 }: {
   character: CharacterId;
