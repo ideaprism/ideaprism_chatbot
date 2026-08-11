@@ -480,10 +480,25 @@ test("감정 태그가 없으면 그림 한 장으로 그린다", () => {
   ]);
 });
 
-test("아직 한 글자도 안 나왔어도 그림 한 장은 남는다", () => {
-  assert.deepEqual(splitByEmotion("", [{ at: 0, emotion: "thinking" }], "welcome"), [
-    { emotion: "thinking", text: "" },
-  ]);
+test("대사가 아직 안 왔으면 그림도 내보내지 않는다", () => {
+  // 감정 표식은 문단 맨 앞에 오므로 "표식은 왔는데 대사는 아직"인 순간이 반드시 생긴다.
+  // 이때 그림을 그리면 얼굴이 먼저 뜨고 말이 뒤늦게 따라붙는다.
+  assert.deepEqual(splitByEmotion("", [{ at: 0, emotion: "thinking" }], "welcome"), []);
+  assert.deepEqual(splitByEmotion("", undefined, "welcome"), []);
+});
+
+test("마지막 감정의 대사가 아직 안 왔으면 그 그림만 미룬다", () => {
+  // 앞 토막은 이미 대사가 있으니 그대로 보이고, 새로 온 감정만 기다린다
+  const segments = splitByEmotion(
+    "찾아볼게.",
+    [
+      { at: 0, emotion: "search" },
+      { at: 9, emotion: "found" },
+    ],
+    "analyzing",
+  );
+
+  assert.deepEqual(segments, [{ emotion: "search", text: "찾아볼게." }]);
 });
 
 test("본문 길이를 벗어난 자리 표시는 버린다", () => {

@@ -25,8 +25,11 @@ export interface EmotionSegment {
  * 표식 위치를 기준으로 본문을 토막 낸다.
  *
  * 첫 표식보다 앞선 글자는 fallbackEmotion 이 맡는다 (AI가 태그 없이 말을 시작한 경우).
- * 글자가 하나도 없는 토막은 버리되, 전부 비면 그림 한 장은 남긴다
- * (스트리밍 초반 "생각하는 중…" 말풍선에도 얼굴은 있어야 한다).
+ *
+ * **글자가 없는 토막은 내보내지 않는다.** 감정 표식은 문단 맨 앞에 오므로,
+ * 표식만 도착하고 대사는 아직 안 온 순간이 반드시 생긴다. 그때 그림부터 그리면
+ * 얼굴이 먼저 뜨고 말이 뒤늦게 따라붙는다. 그림은 그 대사에서 드러나는 감정이니
+ * 대사와 함께 나와야 한다 — 그래서 한 글자도 없으면 빈 배열을 돌려준다.
  */
 export function splitByEmotion(
   text: string,
@@ -51,6 +54,5 @@ export function splitByEmotion(
   }
   segments.push({ emotion, text: text.slice(cursor).trim() });
 
-  const kept = segments.filter((segment) => segment.text.length > 0);
-  return kept.length > 0 ? kept : [{ emotion, text: "" }];
+  return segments.filter((segment) => segment.text.length > 0);
 }

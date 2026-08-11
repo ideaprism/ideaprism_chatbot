@@ -66,7 +66,6 @@ function CharacterBubble({ message }: { message: ChatMessage }) {
   const characterId = message.character ?? "teacher";
   const meta = getCharacter(characterId);
   const tools = message.tools ?? [];
-  const empty = message.text.trim().length === 0;
 
   // 감정이 바뀐 자리에서 글을 토막 내고, 토막마다 다른 그림을 붙인다.
   // 감정이 한 번만 나왔으면 토막도 하나 — 지금까지와 똑같이 보인다.
@@ -90,37 +89,45 @@ function CharacterBubble({ message }: { message: ChatMessage }) {
       )}
 
       <div className="flex flex-col gap-3">
-        {segments.map((segment, index) => (
-          <div key={index} className="flex items-start gap-3">
-            <CharacterAvatar
-              character={characterId}
-              emotion={segment.emotion}
-              size={AVATAR_SIZE}
-            />
-
-            <div className="min-w-0 flex-1">
+        {/* 아직 한 글자도 안 나왔으면 말풍선만. 그림은 대사와 함께 나온다 */}
+        {segments.length === 0
+          ? message.pending && (
               <div
                 className={cn(
-                  "inline-block max-w-full rounded-2xl rounded-tl-sm border px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap",
+                  "self-start rounded-2xl rounded-tl-sm border px-4 py-2.5 text-[15px] leading-relaxed",
                   meta.theme.bubble,
                 )}
               >
-                {empty && message.pending ? (
-                  <span className="text-neutral-400">생각하는 중…</span>
-                ) : (
-                  <span
+                <span className="text-neutral-400">생각하는 중…</span>
+              </div>
+            )
+          : segments.map((segment, index) => (
+              <div key={index} className="flex items-start gap-3">
+                <CharacterAvatar
+                  character={characterId}
+                  emotion={segment.emotion}
+                  size={AVATAR_SIZE}
+                />
+
+                <div className="min-w-0 flex-1">
+                  <div
                     className={cn(
-                      // 깜빡이는 커서는 지금 쓰이고 있는 마지막 토막에만
-                      message.pending && index === segments.length - 1 && "caret",
+                      "inline-block max-w-full rounded-2xl rounded-tl-sm border px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap",
+                      meta.theme.bubble,
                     )}
                   >
-                    {segment.text}
-                  </span>
-                )}
+                    <span
+                      className={cn(
+                        // 깜빡이는 커서는 지금 쓰이고 있는 마지막 토막에만
+                        message.pending && index === segments.length - 1 && "caret",
+                      )}
+                    >
+                      {segment.text}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
+            ))}
       </div>
     </div>
   );
