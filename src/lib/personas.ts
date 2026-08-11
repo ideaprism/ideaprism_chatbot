@@ -1,23 +1,17 @@
 /**
- * personas/*.txt 로더.
+ * 페르소나 원문 정제 (순수 함수).
  *
- * PRD F-2: 페르소나 문서는 personas/ 파일이 원본이다. 대표님이 .txt만 고치면
- * 캐릭터 말투가 바뀌도록, 코드에 대본을 복사해 두지 않는다.
+ * PRD F-2: 페르소나 문서는 대표님이 고치는 글이 원본이다. 코드에 대본을 복사해 두지 않는다.
+ * 글을 어디서 읽어 오는지는 `lib/prompts/persona.ts` 가 맡는다
+ * (파일 = 공장 초기값, 관리자 페이지에서 고친 값이 있으면 그쪽).
  *
  * 다만 원본 문서는 1.0 시절 규칙("매 응답 시작 시 <img src=...> 를 넣어라")을 담고 있는데,
  * 2.0의 아키텍처 원칙 3(감정 이름만 고르고 이미지는 화면이 렌더링)과 충돌한다.
- * 그래서 로딩 시점에 이미지 관련 지시만 걷어내고(sanitize), 대신 2.0 방식의
+ * 그래서 읽어 온 뒤 이미지 관련 지시만 걷어내고(sanitize), 대신 2.0 방식의
  * 감정 선택 규칙을 프롬프트 조립 단계(prompt.ts)에서 붙인다.
+ *
+ * 이 파일은 서버 전용 코드를 들이지 않는다 — 회귀 테스트가 그대로 불러 쓰기 때문이다.
  */
-
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { CHARACTERS, type CharacterId } from "./characters";
-
-const PERSONA_DIR = path.join(process.cwd(), "personas");
-
-/** 프로세스 수명 동안 캐시 — 페르소나는 고정 텍스트라 매 요청 읽을 이유가 없다 */
-const cache = new Map<CharacterId, string>();
 
 /**
  * 이미지 지시문 제거.
@@ -66,19 +60,3 @@ export function sanitizePersona(raw: string): string {
     .trim();
 }
 
-/** 캐릭터의 페르소나 대본을 읽어 온다(정제 후 캐시) */
-export async function loadPersona(id: CharacterId): Promise<string> {
-  const cached = cache.get(id);
-  if (cached) return cached;
-
-  const file = CHARACTERS[id].personaFile;
-  const raw = await readFile(path.join(PERSONA_DIR, file), "utf-8");
-  const clean = sanitizePersona(raw);
-  cache.set(id, clean);
-  return clean;
-}
-
-/** 개발 중 페르소나 파일을 고쳤을 때 캐시를 비운다 */
-export function clearPersonaCache() {
-  cache.clear();
-}

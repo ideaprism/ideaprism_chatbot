@@ -16,14 +16,10 @@
 
 import "server-only";
 
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { getCharacter, type CharacterId } from "./characters";
 import { fillPlaceholders } from "./prompt";
+import { readPrompt } from "./prompts/store";
 import { STAGES, type StageId } from "./quest";
-
-const FLOW_DIR = path.join(process.cwd(), "flow");
 
 /** 단계 번호 → 파일 이름 (대표님이 폴더에서 바로 알아볼 수 있게 한글로) */
 const STAGE_FILES: Record<StageId, string> = {
@@ -42,33 +38,20 @@ export const FLOW_FILES = [
   "배턴터치-등장",
 ];
 
-/** 파일은 고정 텍스트라 프로세스 수명 동안 캐시한다 */
-const cache = new Map<string, string | null>();
-
-/** 파일 맨 위의 <!-- 설명 --> 주석은 AI에게 보낼 필요가 없으므로 걷어낸다 */
-function stripComments(text: string): string {
+/** 글 맨 위의 <!-- 설명 --> 주석은 대표님을 위한 안내라 AI에게 보내지 않는다 */
+export function stripComments(text: string): string {
   return text.replace(/<!--[\s\S]*?-->/g, "").trim();
 }
 
-/** flow/<name>.md 를 읽는다. 없으면 null (호출한 쪽이 기본 문구를 쓴다) */
+/**
+ * 흐름 지침 하나를 읽는다. 없으면 null (호출한 쪽이 코드에 든 기본 문구를 쓴다).
+ * 관리자 페이지에서 고친 값이 있으면 그것을, 없으면 flow/ 파일을 쓴다.
+ */
 export async function loadFlow(name: string): Promise<string | null> {
-  if (cache.has(name)) return cache.get(name) ?? null;
-
-  try {
-    const raw = await readFile(path.join(FLOW_DIR, `${name}.md`), "utf-8");
-    const clean = stripComments(raw);
-    const value = clean.length > 0 ? clean : null;
-    cache.set(name, value);
-    return value;
-  } catch {
-    cache.set(name, null);
-    return null;
-  }
-}
-
-/** 개발 중 flow 파일을 고쳤을 때 캐시를 비운다 */
-export function clearFlowCache() {
-  cache.clear();
+  const raw = await readPrompt("flow", name);
+  if (!raw) return null;
+  const clean = stripComments(raw);
+  return clean.length > 0 ? clean : null;
 }
 
 /** 공통 운영 규칙 원문. 자리표시자 채우기는 prompt.ts 가 한다(순수 함수라 테스트하기 좋다) */

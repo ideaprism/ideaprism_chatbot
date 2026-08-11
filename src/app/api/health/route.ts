@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { adminConfigured } from "@/lib/admin/auth";
 import { availableProviders } from "@/lib/ai/provider";
 import { CHARACTERS } from "@/lib/characters";
 import { flowStatus } from "@/lib/flow";
-import { loadPersona } from "@/lib/personas";
-import { supabaseRead } from "@/lib/supabase";
+import { loadPersona } from "@/lib/prompts/persona";
+import { supabaseRead, supabaseWrite } from "@/lib/supabase";
 
 /**
  * 연결 점검용 라우트. 브라우저에서 /api/health 로 열면
@@ -69,6 +70,44 @@ export async function GET() {
     detail: personaResults.map((r) => r.line).join(", "),
   };
 
+  // 관리자 페이지 — 코드가 없으면 잠긴 상태다(고장이 아니라 기본값)
+  checks.adminPage = adminConfigured()
+    ? { ok: true, detail: "접근 코드 설정됨 — /admin 에서 대본·흐름을 고칠 수 있습니다" }
+    : {
+        ok: false,
+        detail:
+          "ADMIN_PASSWORD 가 없어 /admin 이 잠겨 있습니다 (프롬프트 보호를 위한 기본값)",
+      };
+
+  // 관리자 페이지에서 고친 글을 담아 두는 표
+  //
+  // ※ head:true 로 개수만 세는 조회는 표가 아예 없어도 오류를 돌려주지 않는다(실측).
+  //   그러면 표가 없는데도 점검이 초록으로 나온다. 그래서 행을 실제로 받아 본다.
+  //   (많아야 12줄짜리 표라 부담이 없다)
+  try {
+    const { data, error } = await supabaseWrite().from("prompt_overrides").select("kind, name");
+    const count = data?.length ?? 0;
+    checks.promptOverrides = error
+      ? {
+          ok: false,
+          detail:
+            "prompt_overrides 표가 없습니다 — supabase/prompt_overrides.sql 을 " +
+            "Supabase에서 실행하면 관리자 페이지의 저장이 켜집니다 (지금은 파일 원본으로 동작)",
+        }
+      : {
+          ok: true,
+          detail:
+            count > 0
+              ? `고쳐 둔 글 ${count}개 — 파일 대신 이 값이 쓰입니다`
+              : "표 준비됨 — 아직 고친 글은 없고 파일 원본으로 동작 중",
+        };
+  } catch {
+    checks.promptOverrides = {
+      ok: false,
+      detail: "확인하지 못했습니다 (SUPABASE_SECRET_KEY 를 확인해 주세요)",
+    };
+  }
+
   // 흐름 지침 파일 — 없으면 코드에 든 기본 문구로 도는 것이지 고장은 아니다
   const flow = await flowStatus();
   const missingFlow = flow.filter((file) => !file.loaded).map((file) => file.name);
@@ -91,9 +130,11 @@ export async function GET() {
       const { count, error } = await supabaseRead()
         .from("inventions")
         .select("id", { count: "exact", head: true });
-      checks.supabaseRead = error
-        ? { ok: false, detail: `연결 실패: ${error.message}` }
-        : { ok: true, detail: `inventions 테이블 ${count ?? 0}건 확인` };
+      // count 가 null 이면 표에 닿지 못한 것이다 — head 조회는 그때도 오류를 안 준다
+      checks.supabaseRead =
+        error || count === null
+          ? { ok: false, detail: `연결 실패: ${error?.message ?? "inventions 표를 찾지 못했습니다"}` }
+          : { ok: true, detail: `inventions 테이블 ${count}건 확인` };
     } catch (cause) {
       checks.supabaseRead = {
         ok: false,

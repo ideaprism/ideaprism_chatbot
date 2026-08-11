@@ -11,7 +11,7 @@ import { AiError, type AiMessage, type AiToolResult } from "@/lib/ai/types";
 import { normalizeEmotion } from "@/lib/characters";
 import { handoffEnterText, operatingRulesTemplate, stageMission } from "@/lib/flow";
 import { saveNote } from "@/lib/notes/repository";
-import { loadPersona } from "@/lib/personas";
+import { loadPersona } from "@/lib/prompts/persona";
 import {
   buildSystemPrompt,
   compactHistory,
