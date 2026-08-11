@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { hasEntered } from "@/lib/entry/auth";
 import { availableValues, gradeNameMap } from "@/lib/search/facets";
 import { MAX_LOADED, SearchError, searchInventions } from "@/lib/search/service";
 import { putSearch } from "@/lib/search/store";
@@ -17,6 +18,11 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export async function POST(request: Request) {
+  // 입장코드 문 — AI 비용은 안 들지만 Supabase 조회 할당량은 쓴다
+  if (!(await hasEntered())) {
+    return NextResponse.json({ error: "입장코드가 필요합니다." }, { status: 401 });
+  }
+
   let keyword: string;
   let sessionId: string;
   try {

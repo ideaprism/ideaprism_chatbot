@@ -27,6 +27,7 @@ import {
   type ParsedChunk,
   type TurnContext,
 } from "@/lib/prompt";
+import { hasEntered } from "@/lib/entry/auth";
 import { trackOf } from "@/lib/quest";
 import { stageAt } from "@/lib/track";
 import { isSessionState, noteDigest } from "@/lib/session";
@@ -51,6 +52,12 @@ function fail(message: string, status = 400) {
 }
 
 export async function POST(request: Request) {
+  // 입장코드 문. 여기가 **AI 비용이 실제로 나가는 곳**이라 화면과 별개로 한 번 더 막는다 —
+  // 화면을 거치지 않고 이 주소를 직접 부를 수 있기 때문이다.
+  if (!(await hasEntered())) {
+    return fail("입장코드를 넣어야 대화를 시작할 수 있어요.", 401);
+  }
+
   let body: ChatRequest;
   try {
     body = (await request.json()) as ChatRequest;

@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, KeyRound, Loader2, TriangleAlert } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { Wordmark } from "@/components/Wordmark";
 import { charactersByGroup, emotionImageUrl } from "@/lib/characters";
@@ -65,6 +65,22 @@ export default function Landing() {
     noStageOnServer,
   );
 
+  /**
+   * 입장코드를 넣은 사람인가. null = 아직 서버에 물어보는 중.
+   *
+   * 소개는 누구나 보고, **대화를 시작하는 것만** 막는다(대표님 결정).
+   * 이건 화면일 뿐이라 실제로 막는 곳은 서버다 — `/chat` 문지기와 API 쪽.
+   */
+  const [entered, setEntered] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // 상태 변경은 전부 비동기 콜백 안에서 (effect 안에서 바로 하면 lint가 막는다)
+    fetch("/api/entry")
+      .then((response) => response.json())
+      .then((data) => setEntered(Boolean(data.entered)))
+      .catch(() => setEntered(false));
+  }, []);
+
   const startFresh = () => {
     try {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
@@ -110,9 +126,13 @@ export default function Landing() {
           </p>
         </div>
 
-        {/* 시작하기 */}
-        <div className="flex flex-col items-center gap-3">
-          {resumeAt === null ? (
+        {/* 시작하기 — 입장코드를 넣기 전에는 코드 입력칸이 이 자리에 있다 */}
+        <div className="flex min-h-[76px] flex-col items-center justify-center gap-3">
+          {entered === null ? (
+            <Loader2 className="size-5 animate-spin text-outline" />
+          ) : !entered ? (
+            <EntryForm onOpen={() => setEntered(true)} />
+          ) : resumeAt === null ? (
             <Link
               href="/chat"
               className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-3.5 text-base font-bold text-on-primary shadow-lg shadow-primary/25 transition-colors hover:bg-primary/90"
@@ -204,5 +224,80 @@ export default function Landing() {
         </p>
       </footer>
     </main>
+  );
+}
+
+/**
+ * 입장코드 입력칸.
+ *
+ * 아직 정해진 분들에게만 보여 드리는 프로토타입이라, 대화를 시작하려면 코드가 필요하다.
+ * 코드가 맞으면 서버가 서명된 쪽지(쿠키)를 주고, 한 달 동안 다시 묻지 않는다.
+ */
+function EntryForm({ onOpen }: { onOpen: () => void }) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = () => {
+    if (!code.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+
+    fetch("/api/entry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) onOpen();
+        else setError(data?.error ?? "들어가지 못했어요.");
+      })
+      .catch(() => setError("들어가지 못했어요. 잠시 뒤 다시 해 주세요."))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex items-center gap-2">
+        <div className="relative">
+          <KeyRound className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-outline" />
+          <input
+            value={code}
+            autoFocus
+            inputMode="text"
+            autoComplete="off"
+            onChange={(event) => setCode(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+            placeholder="입장코드"
+            aria-label="입장코드"
+            className="w-48 rounded-full border border-outline-variant/60 bg-surface py-3.5 pr-4 pl-10 text-base outline-none focus:border-primary"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy || !code.trim()}
+          className="inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-base font-bold text-on-primary shadow-lg shadow-primary/25 transition-colors hover:bg-primary/90 disabled:bg-outline-variant disabled:text-outline disabled:shadow-none"
+        >
+          {busy ? <Loader2 className="size-5 animate-spin" /> : null}
+          들어가기
+        </button>
+      </div>
+
+      <p className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+        {error ? (
+          <>
+            <TriangleAlert className="size-3.5 shrink-0 text-amber-600" />
+            <span className="text-amber-800">{error}</span>
+          </>
+        ) : (
+          "선생님께 받은 입장코드를 넣으면 대화를 시작할 수 있어요."
+        )}
+      </p>
+    </div>
   );
 }

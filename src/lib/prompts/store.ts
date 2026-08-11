@@ -31,6 +31,19 @@ export type PromptKind = "persona" | "flow" | "config";
 /** config 갈래에서 다루는 설정 이름 */
 export const CONFIG_NAMES = ["대화구조"] as const;
 
+/**
+ * 학생 입장코드가 저장되는 자리.
+ *
+ * 아래 CONFIG_DOCS 목록에는 **일부러 넣지 않았다** — 프롬프트 탭의 글 편집기로는
+ * 못 건드리게 하려는 것이다(그 편집기는 20자 미만을 거부하므로 네 자리 코드를
+ * 저장할 수 없고, 코드를 긴 글처럼 다루면 실수로 지워지기 쉽다).
+ * 관리자 페이지의 「입장코드」 탭이 전용 창구다.
+ */
+export const ENTRY_CODE_NAME = "입장코드";
+
+/** 아무것도 저장돼 있지 않을 때 쓰는 입장코드 (대표님이 정하신 값) */
+export const DEFAULT_ENTRY_CODE = "7117";
+
 /** 관리자 화면에 보여 줄 문서 한 건 */
 export interface PromptDoc {
   kind: PromptKind;
@@ -108,7 +121,9 @@ export async function readDefault(kind: PromptKind, name: string): Promise<strin
   try {
     if (kind === "config") {
       // 설정값은 파일이 아니라 코드가 공장 초기값을 준다
-      value = name === "대화구조" ? serializeCast(DEFAULT_CAST) : null;
+      if (name === "대화구조") value = serializeCast(DEFAULT_CAST);
+      else if (name === ENTRY_CODE_NAME) value = DEFAULT_ENTRY_CODE;
+      else value = null;
     } else if (kind === "persona") {
       const file = CHARACTERS[name as CharacterId]?.personaFile;
       if (file) value = await readFile(path.join(PERSONA_DIR, file), "utf-8");

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { hasEntered } from "@/lib/entry/auth";
 import { KIPRIS_ROWS, KiprisError, searchKipris } from "@/lib/kipris/service";
 
 /**
@@ -10,6 +11,11 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export async function POST(request: Request) {
+  // 입장코드 문 — AI 비용은 안 들지만 특허청 서비스키 할당량을 쓴다
+  if (!(await hasEntered())) {
+    return NextResponse.json({ error: "입장코드가 필요합니다." }, { status: 401 });
+  }
+
   let query: string;
   let page: number;
   try {

@@ -172,16 +172,41 @@ React Flow(`@xyflow/react`)로 파이프라인을 그리고 **노드를 클릭�
 
 # 대표님이 직접 하셔야 할 것 (아직 남음)
 
-1. **사이트가 인증 없이 열린다.** 주소를 아는 사람은 누구나 대화할 수 있고
-   **AI 비용이 대표님 계정에서 나간다.** 콘솔 월 한도를 걸거나
-   Vercel Deployment Protection을 Standard로 올릴 것.
+1. ~~사이트가 인증 없이 열린다~~ → **입장코드를 달았다** (기본 `7117`).
+   대화·검색·특허조회가 코드 없이는 막힌다. **관리자 「입장코드」 탭에서 바꿀 것** —
+   여러 분께 알려 주기 전에 기본값에서 한 번 바꾸시는 편이 안전합니다.
+   다만 이건 **비용을 지키는 문**이지 사람을 가리는 인증이 아니다.
+   코드가 새면 그만이므로, **Anthropic·OpenAI 콘솔의 월 한도는 그대로 걸어 둘 것.**
 2. **Claude 키만 비어 있다** (`ANTHROPIC_API_KEY`). OpenAI(`gpt-5.4-mini`)·Gemini(`gemini-3.6-flash`)는 작동 확인됨.
 3. **관리자 로그인 뒤 화면은 미확인.** AI가 비밀번호를 다루지 않아 못 들어간다.
-   `배포주소/admin` 에서 ① 대화구조 바꿔 저장 ② 이용내역 탭 확인 — 이 둘만 봐 주시면 된다.
+   `배포주소/admin` 에서 ① 대화구조 바꿔 저장 ② 이용내역 탭 ③ **입장코드 탭에서 코드 바꾸기**
+   — 이 셋만 봐 주시면 된다.
 
 ---
 
 # 끝난 일 (2026-08-12 세션)
+
+## ✅ 입장코드 — 아무나 대화를 시작하지 못한다
+
+**기본 코드 `7117`.** 관리자 「입장코드」 탭에서 바꾼다.
+
+**막는 범위는 대표님이 정하셨다 — 소개는 열고, 시작만 막는다.**
+랜딩의 캐릭터 10명 소개는 누구나 본다(대표님이 그대로 보여 주며 설명하실 수 있게).
+막히는 것은 **돈이 나가는 자리**다.
+
+| 문 | 어디 |
+|---|---|
+| 화면 | `app/chat/layout.tsx` — 코드 없이 `/chat` 을 치면 랜딩으로 되돌린다 |
+| **비용** | `api/chat`(AI) · `api/search`(Supabase) · `api/kipris`(특허청 키) 가 401 |
+
+화면만 막으면 소용없다 — 화면을 거치지 않고 API를 직접 부를 수 있다. **두 군데 다 걸었다.**
+
+- 관리자 잠금과 같은 기계(서명된 쪽지). **쿠키에 코드 자체를 담지 않는다**
+- 한 번 넣으면 그 기기에서 **한 달** 동안 안 묻는다
+- **관리자는 코드 없이 통과한다** (「학생 화면 보기」가 막히면 곤란하다)
+- 코드는 `prompt_overrides` 의 `config/입장코드`. **저장된 값이 없으면 코드에 든 기본값**을
+  쓰므로 **DB가 없어도 문이 작동한다**
+- 프롬프트 편집기로는 못 건드리게 해 뒀다 (그 편집기는 20자 미만을 거부한다)
 
 ## ✅ 학습 프로그램을 데이터로 꺼냈다 (스튜디오 1단계)
 
@@ -267,15 +292,18 @@ ECOSYSTEM.md  세 서비스(1.0·2.0·3.0)의 목적·연결·영향 지도   �
 personas/     캐릭터 대본 10개 (공장 초기값) — /admin 에서도 고침
 flow/         대화 흐름 지침 9개 (공장 초기값)
 supabase/     invention_notes · prompt_overrides DDL (둘 다 적용됨)
-tests/        회귀 테스트 133개 (core · track · notes · usage · kipris · search …)
+tests/        회귀 테스트 137개 (core · track · entry · notes · usage · kipris · search …)
 src/app/
-  page.tsx            랜딩 (1.0 디자인 토큰, 10명 3그룹)
+  page.tsx            랜딩 (1.0 디자인 토큰, 10명 3그룹) + 입장코드 입력칸
+  chat/layout.tsx     대화 화면 문지기 — 코드 없으면 랜딩으로
   chat/page.tsx       채팅 + 2패널
   admin/page.tsx      관리자 껍데기(Console) + 프롬프트 탭
+  admin/EntryCodeTab.tsx  입장코드 관리
   admin/UsageTab.tsx  이용내역
   admin/HealthTab.tsx 점검
   api/                chat · cast · search · kipris · ipc · invention-keywords
-                      admin/{session,prompts,notes} · health · providers
+                      entry(입장) · admin/{session,prompts,notes,entry-code}
+                      health · providers
 src/components/
   Wordmark.tsx      무지개 로고 (랜딩·대화 화면 공용)
   MessageList.tsx   말풍선 — 사람·감정이 바뀐 자리에서 토막
@@ -286,6 +314,9 @@ src/lib/
     index.ts          트랙 보관함 (getTrack · stageAt · stageIdsOf)
     tracks/
       invention5.ts   「발명 5단계」 — 이름·대본·도구·완료 조건
+  entry/            학생 입장코드 — 아무나 대화를 시작하지 못하게 하는 문
+    auth.ts           쪽지 서명·확인 (server-only)
+    rules.ts          코드 규칙 (순수 함수 — 테스트가 부른다)
   cast.ts           대화구조 — 어느 단계에 누가 (순수 함수)
   characters.ts     캐릭터 10명 + 감정 그림 매핑
   emotion.ts        말풍선 토막내기 splitSpeech (순수 함수)
@@ -378,9 +409,24 @@ src/lib/
 - **`next/image` 최적화를 켜 둔다.** 원본 1.6MB → 220KB. `unoptimized` 를 다시 붙이지 말 것.
 - 캐릭터마다 감정 이름이 다르다. **지원(jiwon)만 파일명에 번호가 없다** (`감정.png`).
 
+## 입장코드
+
+- **소개는 열고, 시작만 막는다** (대표님 결정). 랜딩의 캐릭터 소개는 코드 없이 보인다.
+- **문은 두 군데.** 화면(`chat/layout.tsx`)과 **돈이 나가는 API**(chat·search·kipris).
+  **화면만 막는 것은 연극이다** — API를 직접 부르면 그만이다.
+- **쪽지를 입장코드로 서명한다.** 그래서 **코드를 바꾸면 들어와 있던 사람도 다시 넣어야 한다.**
+  대화는 브라우저에 남아 있어 「이어서 하기」로 이어진다(잃는 것 없음).
+  이 성질을 없애려면 서명 열쇠를 따로 둬야 하는데, 그러면 "코드를 바꿔 잠근다"가 안 된다.
+- **DB가 없어도 작동한다.** 저장된 값이 없으면 코드에 든 기본값(`7117`)을 쓴다.
+- **관리자는 코드 없이 통과한다** (`hasEntered()` 가 `isAdmin()` 도 본다).
+- **비용을 지키는 문이지 인증이 아니다.** 코드를 아는 사람끼리는 서로 구분되지 않는다.
+  학생을 식별하는 것은 정식판의 계정 체계 몫이다 (ECOSYSTEM 8장 ②).
+- 규칙(길이·빈칸)은 `lib/entry/rules.ts` 에 순수 함수로 빼 테스트로 못박았다 —
+  `auth.ts` 는 `server-only` 라 테스트가 못 부른다 (`personas.ts` 와 같은 방식).
+
 ## 관리자 페이지
 
-- **탭 셋** — 프롬프트(대화구조·대본 10·흐름 9) · 이용내역 · 점검.
+- **탭 넷** — 프롬프트(대화구조·대본 10·흐름 9) · **입장코드** · 이용내역 · 점검.
   껍데기는 `admin/page.tsx` 의 `Console`, 알맹이는 탭마다 다른 컴포넌트다.
 - **이용내역은 `invention_notes` 를 읽는다.** 그 표는 RLS가 켜져 있고 정책이 없어서
   브라우저 키로는 못 읽는다 — `api/admin/notes` 가 서버 전용 키로 읽는 **유일한 창구**다.
@@ -495,7 +541,9 @@ src/lib/
 - 한글이 든 요청을 `curl -d '...'` 로 인라인 전달하면 **인코딩이 깨진다.**
   파일로 쓴 뒤 `--data-binary @파일` 로 보낼 것.
 - 점검: `/api/health` — 키 값은 안 보이고 준비 여부만 나온다. `/admin` 점검 탭에서도 본다.
-- 명령: `npm run dev` / `npm test` (133개) / `npm run typecheck` / `npm run lint` / `npm run build`
+- 명령: `npm run dev` / `npm test` (137개) / `npm run typecheck` / `npm run lint` / `npm run build`
+- **입장코드 기본값은 `7117`.** 개발 중에 대화를 열려면 랜딩에서 한 번 넣으면 된다
+  (관리자로 로그인해 있으면 안 넣어도 된다)
 - **`git push` 는 된다.** (예전 메모에 "AI가 못 한다"고 적혀 있었으나 2026-08-12 세션에서
   실제로 성공했다. Vercel 이 push 를 받아 20초쯤 뒤 자동 배포한다)
 - **Vercel 배포 상태는 MCP 도구로 확인한다** — `list_deployments` / `get_deployment`,
