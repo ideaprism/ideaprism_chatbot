@@ -153,6 +153,13 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
           items: { type: "string" },
           description: "효과 (선택)",
         },
+        ipc: {
+          type: "string",
+          description:
+            "IPC 분류 코드 4자리 (선택). 예: 우산 'A45B', 청소도구 'A47L', 분무기 'B05B'. " +
+            "분류가 맞으면 엉뚱한 분야의 특허가 걸러진다. " +
+            "확실하지 않으면 넣지 않는다 — 없는 코드를 적으면 프로그램이 버리고 알려 준다.",
+        },
       },
       required: ["object"],
       additionalProperties: false,
@@ -162,20 +169,12 @@ export const TOOL_SCHEMAS: Record<ToolName, AiTool> = {
   search_kipris: {
     name: "search_kipris",
     description:
-      "검색식으로 실제 특허를 조회하고 결과를 우측 특허 패널에 띄운다. " +
-      "조회 결과에 나온 특허만 근거로 삼는다. 결과에 없는 특허를 지어내면 안 된다. " +
-      "학생이 패널에서 검색식을 직접 고쳐 다시 조회했을 수도 있으니, 현재 검색식을 확인하고 쓴다.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "generate_kipris_query가 돌려준 검색식. 직접 지어내지 않는다.",
-        },
-      },
-      required: ["query"],
-      additionalProperties: false,
-    },
+      "지금 특허 패널에 있는 검색식으로 실제 특허를 조회하고 결과를 그 패널에 띄운다. " +
+      "먼저 generate_kipris_query로 검색식을 만들어 두어야 한다. " +
+      "검색식은 프로그램이 들고 있으므로 네가 넘기지 않는다 — 학생이 패널에서 직접 " +
+      "고쳤을 수도 있고, 그 경우에도 화면에 보이는 그 검색식으로 조회된다. " +
+      "조회 결과에 나온 특허만 근거로 삼는다. 결과에 없는 특허를 지어내면 안 된다.",
+    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
 
   update_note: {

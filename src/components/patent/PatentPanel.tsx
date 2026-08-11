@@ -193,7 +193,12 @@ export function PatentPanel({
   snapshot: PatentSnapshot | null;
   seed: PatentSeed | null;
   patents: Patent[];
-  onResult: (
+  /**
+   * 조회 결과를 세션에 실을 때 부른다 (5단계 선행기술조사).
+   * 선배 발명을 구경하다 들어온 특허 검색은 이걸 주지 않는다 —
+   * 학생이 자기 아이디어로 해 둔 선행기술조사를 덮어쓰면 안 되기 때문이다.
+   */
+  onResult?: (
     query: string,
     patents: Patent[],
     totalCount: number,
@@ -260,7 +265,7 @@ export function PatentPanel({
         setTotalCount(data.totalCount);
         setPage(data.page ?? wanted);
         // 바뀐 결과를 세션에 실어 둔다 — 다음 턴에 특허 탐정도 같은 화면을 본다
-        onResult(
+        onResult?.(
           data.query,
           data.patents,
           data.totalCount,
@@ -283,6 +288,9 @@ export function PatentPanel({
   /**
    * 5칸을 고치면 검색식도 함께 다시 만든다 (1.0과 같은 동작).
    * 한 곳에서 같이 바꾸므로, 화면이 두 번 그려지거나 검색식이 한 박자 늦는 일이 없다.
+   *
+   * 결과가 빈 문자열이어도 그대로 넣는다 — 갈래를 전부 꺼 놓고 예전 검색식이
+   * 입력창에 남아 있으면, 꺼 둔 낱말로 조회되는 것처럼 보인다.
    */
   const applyTemplate = (
     nextFields: TemplateFields,
@@ -290,8 +298,7 @@ export function PatentPanel({
   ) => {
     setFields(nextFields);
     setActive(nextActive);
-    const formula = formulaOf(nextFields, nextActive);
-    if (formula) setQuery(formula);
+    setQuery(formulaOf(nextFields, nextActive));
   };
 
   const toggleCategory = (key: CategoryKey) =>
@@ -336,10 +343,8 @@ export function PatentPanel({
       setSeeding(false);
 
       const formula = formulaOf(next, DEFAULT_ACTIVE);
-      if (formula) {
-        setQuery(formula);
-        void search(formula, 1, partsOf(next), groupsOf(DEFAULT_ACTIVE));
-      }
+      setQuery(formula);
+      if (formula) void search(formula, 1, partsOf(next), groupsOf(DEFAULT_ACTIVE));
     })();
 
     return () => {

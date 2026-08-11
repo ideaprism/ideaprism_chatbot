@@ -21,6 +21,7 @@ import {
   pickGroups,
   type GroupKey,
 } from "./kipris/formula";
+import { lookupIpc } from "./kipris/ipc";
 import { KiprisError, searchKipris } from "./kipris/service";
 import { advanceStage, STAGES, STAGE_IDS, type StageId } from "./quest";
 import {
@@ -414,12 +415,18 @@ export async function executeTool(
 
     // ── 특허 ────────────────────────────────────────────────
     case "generate_kipris_query": {
+      // IPC는 표에 있는 코드만 쓴다 — AI가 지어낸 분류가 들어가면 검색식이 통째로 빗나간다
+      const wantedIpc = typeof args.ipc === "string" ? args.ipc.trim().toUpperCase() : "";
+      const ipcMeaning = wantedIpc ? await lookupIpc(wantedIpc) : null;
+      const ipc = ipcMeaning ? wantedIpc : undefined;
+
       const parts: QueryParts = {
         object: asStringArray(args.object) ?? [],
         problem: asStringArray(args.problem),
         solution: asStringArray(args.solution),
         method: asStringArray(args.method),
         effect: asStringArray(args.effect),
+        ipc,
       };
 
       // 1.0과 같은 기준 — 처음에는 대상·해결수단만 넣는다.
@@ -446,12 +453,18 @@ export async function executeTool(
       };
       const next: SessionState = { ...session, patent: nextSnapshot };
 
-      const reserved = describeReserved(parts, activeGroups);
+      const ipcNote = ipc
+        ? `IPC ${ipc} = ${ipcMeaning}`
+        : wantedIpc
+          ? `※ IPC 코드 "${wantedIpc}" 는 분류표에 없어서 검색식에서 뺐습니다. ` +
+            "학생에게는 분류 없이 낱말로만 찾는다고 말하고, 없는 코드를 지어내지 마세요."
+          : null;
 
       return {
         result: [
           describeFormula(built),
-          reserved,
+          ipcNote,
+          describeReserved(parts, activeGroups),
           "이 검색식으로 조회하려면 search_kipris를 호출하세요.",
         ]
           .filter(Boolean)
@@ -463,10 +476,10 @@ export async function executeTool(
     }
 
     case "search_kipris": {
-      const query =
-        typeof args.query === "string" && args.query.trim()
-          ? args.query.trim()
-          : (session.patent?.query ?? "");
+      // 검색식은 프로그램이 들고 있는 것만 쓴다 (아키텍처 원칙 1).
+      // AI가 문자열을 건네게 두면, 갈래를 다 이어 붙인 검색식을 스스로 지어내
+      // 화면에 보이는 검색식과 실제 조회가 어긋난다.
+      const query = session.patent?.query ?? "";
 
       if (!query) {
         return keep(
@@ -493,10 +506,9 @@ export async function executeTool(
         query,
         totalCount: found.totalCount,
         loadedCount: found.patents.length,
-        // 검색식이 그대로면 갈래 낱말도 그대로 — 학생 화면의 5칸이 비지 않도록
-        parts: query === session.patent?.query ? session.patent.parts : undefined,
-        activeGroups:
-          query === session.patent?.query ? session.patent.activeGroups : undefined,
+        // 검색식이 세션의 것 그대로이므로 갈래 낱말도 그대로 이어 간다
+        parts: session.patent?.parts,
+        activeGroups: session.patent?.activeGroups,
         page: found.page,
       };
       const next: SessionState = { ...session, patent: nextSnapshot };

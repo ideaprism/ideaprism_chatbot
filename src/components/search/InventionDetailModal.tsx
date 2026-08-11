@@ -6,10 +6,12 @@ import {
   ChevronUp,
   ExternalLink,
   ImageIcon,
+  Search,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { PatentPanel } from "@/components/patent/PatentPanel";
 import { splitTags } from "@/lib/search/facets";
 import {
   categoryColorClass,
@@ -36,21 +38,24 @@ import type { InventionRow } from "@/types/search";
  *
  * 여는 열쇠는 세션의 `focusedId` 다. 학생이 카드를 눌러도, AI가 show_invention 으로
  * "이거 봐 봐" 해도 같은 모달이 열린다 (PRD S-4 양방향 동기화).
+ *
+ * 특허 검색도 1.0처럼 이 모달 "안에서" 열린다. 다른 화면으로 보내 버리면 보던
+ * 발명으로 되돌아올 길이 없다. 특허 화면의 좌측 위에는 그 발명이 작게 남아 있고,
+ * 누르면 상세로 돌아온다.
  */
 export function InventionDetailModal({
   row,
   gradeName,
   categoryName,
   onClose,
-  onPatentSearch,
 }: {
   row: InventionRow;
   gradeName: string | null;
   categoryName: string | null;
   onClose: () => void;
-  onPatentSearch?: (row: InventionRow) => void;
 }) {
   const [tab, setTab] = useState<"basic" | "detail">("basic");
+  const [view, setView] = useState<"invention" | "patent">("invention");
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -84,21 +89,45 @@ export function InventionDetailModal({
         aria-label={title}
         className="@container flex h-full w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
       >
-        {/* 머리말 */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-4">
-          <h2 className="min-w-0 truncate text-lg font-bold">{title}</h2>
+        {/* 머리말 — 특허 화면에서는 보던 발명이 왼쪽에 작게 남아 되돌아갈 길이 된다 */}
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
+          {view === "patent" ? (
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <InventionThumbnail
+                row={row}
+                title={title}
+                onClick={() => setView("invention")}
+              />
+              <div className="h-9 w-px shrink-0 bg-line" />
+              <h2 className="flex shrink-0 items-center gap-1.5 text-base font-bold">
+                <Search className="size-4" />
+                특허 검색
+              </h2>
+            </div>
+          ) : (
+            <h2 className="min-w-0 truncate px-2 text-lg font-bold">{title}</h2>
+          )}
+
           <button
             type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="rounded-full p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-800"
+            className="shrink-0 rounded-full p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-800"
           >
             <X className="size-5" />
           </button>
         </div>
 
-        {/* 좁은 패널에서는 도면을 위로 올려 쌓는다 — 폭 기준은 화면이 아니라 이 상자다 */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden @3xl:flex-row">
+        {view === "patent" ? (
+          /* 이 발명을 재료로 한 특허 검색 — 선행기술조사(5단계) 기록은 건드리지 않는다 */
+          <PatentPanel
+            snapshot={null}
+            seed={{ inventionId: row.id, title, ipc: row.ipc }}
+            patents={[]}
+          />
+        ) : (
+          /* 좁은 패널에서는 도면을 위로 올려 쌓는다 — 폭 기준은 화면이 아니라 이 상자다 */
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden @3xl:flex-row">
           {/* 왼쪽: 도면 */}
           <div className="flex shrink-0 items-center justify-center border-b border-line bg-neutral-50 p-5 @3xl:w-[45%] @3xl:border-b-0 @3xl:border-r @3xl:p-8">
             <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-line bg-white">
@@ -201,16 +230,14 @@ export function InventionDetailModal({
                     </tbody>
                   </table>
 
-                  {onPatentSearch && (
-                    <button
-                      type="button"
-                      onClick={() => onPatentSearch(row)}
-                      className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-neutral-300 text-sm font-semibold transition-colors hover:bg-neutral-50"
-                    >
-                      <ExternalLink className="size-4" />
-                      이 발명으로 특허 검색
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setView("patent")}
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-neutral-300 text-sm font-semibold transition-colors hover:bg-neutral-50"
+                  >
+                    <ExternalLink className="size-4" />
+                    특허 검색
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -231,8 +258,47 @@ export function InventionDetailModal({
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
+  );
+}
+
+/**
+ * 특허 화면 좌측 위에 남는 발명 — 1.0의 `InventionThumbnail`.
+ * 누르면 보던 상세로 돌아온다. 이게 없으면 특허 화면이 막다른 길이 된다.
+ */
+function InventionThumbnail({
+  row,
+  title,
+  onClick,
+}: {
+  row: InventionRow;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex min-w-0 items-center gap-2.5 rounded-xl border border-line bg-white p-2 text-left transition-all hover:border-neutral-300 hover:shadow-sm"
+    >
+      <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-100">
+        {row.drawing_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={row.drawing_url} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <ImageIcon className="size-4 text-neutral-300" />
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold transition-colors group-hover:text-neutral-600">
+          {title}
+        </p>
+        <p className="mt-0.5 text-[11px] text-neutral-400">눌러서 발명으로 돌아가기</p>
+      </div>
+      <ChevronDown className="size-4 shrink-0 rotate-90 text-neutral-300 transition-colors group-hover:text-neutral-600" />
+    </button>
   );
 }
 

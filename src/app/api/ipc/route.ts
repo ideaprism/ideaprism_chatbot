@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { supabaseRead } from "@/lib/supabase";
+import { lookupIpc } from "@/lib/kipris/ipc";
 
 /**
  * IPC 분류 코드의 뜻 조회 — 1.0과 같은 `ipc_descriptions` 표를 읽는다.
@@ -14,18 +14,5 @@ export async function GET(request: Request) {
   const code = new URL(request.url).searchParams.get("code")?.trim() ?? "";
   if (!code) return NextResponse.json({ code: "", description: null });
 
-  try {
-    const { data } = await supabaseRead()
-      .from("ipc_descriptions")
-      .select("description")
-      .eq("ipc_code", code)
-      .maybeSingle();
-
-    return NextResponse.json({
-      code,
-      description: (data as { description?: string } | null)?.description ?? null,
-    });
-  } catch {
-    return NextResponse.json({ code, description: null });
-  }
+  return NextResponse.json({ code, description: await lookupIpc(code) });
 }

@@ -37,14 +37,12 @@ export function SearchPanel({
   onToggleFilter,
   onClearFilters,
   onFocus,
-  onPatentSearch,
 }: {
   snapshot: SearchSnapshot;
   results: SearchResults;
   onToggleFilter: (kind: FilterKind, value: string) => void;
   onClearFilters: () => void;
   onFocus: (id: string | null) => void;
-  onPatentSearch?: (row: InventionRow) => void;
 }) {
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [view, setView] = useState<ViewMode>("grid");
@@ -187,7 +185,6 @@ export function SearchPanel({
           gradeName={gradeNameOf(focused, grades)}
           categoryName={categoryNameOf(focused)}
           onClose={() => onFocus(null)}
-          onPatentSearch={onPatentSearch}
         />
       )}
     </div>

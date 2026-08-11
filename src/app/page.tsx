@@ -23,7 +23,6 @@ export default function Home() {
     results,
     patents,
     patentEpoch,
-    patentSeed,
     activePanel,
     setActivePanel,
     providers,
@@ -36,7 +35,6 @@ export default function Home() {
     clearFilters,
     focusInvention,
     applyPatentResult,
-    seedPatentSearch,
   } = useChat();
 
   if (!session) {
@@ -50,8 +48,9 @@ export default function Home() {
   const canSearch = Boolean(session.search && results);
   const hasNote =
     session.notes.length > 0 || Object.keys(session.quest.completed).length > 0;
-  // 5단계에서 AI가 만든 검색식이 있거나, 선배 발명에서 특허 검색으로 넘어왔을 때 열 수 있다
-  const canPatent = Boolean(session.patent || patentSeed);
+  // 특허 패널은 5단계 선행기술조사용 — AI가 검색식을 만들어야 열린다.
+  // (선배 발명을 구경하다 하는 특허 검색은 그 발명의 상세 모달 안에서 열린다)
+  const canPatent = Boolean(session.patent);
 
   const panel =
     activePanel === "search" && canSearch && session.search && results ? (
@@ -61,7 +60,6 @@ export default function Home() {
         onToggleFilter={toggleFilter}
         onClearFilters={clearFilters}
         onFocus={focusInvention}
-        onPatentSearch={seedPatentSearch}
       />
     ) : activePanel === "note" ? (
       <NotePanel session={session} />
@@ -69,7 +67,7 @@ export default function Home() {
       <PatentPanel
         key={patentEpoch}
         snapshot={session.patent}
-        seed={patentSeed}
+        seed={null}
         patents={patents}
         onResult={applyPatentResult}
       />
