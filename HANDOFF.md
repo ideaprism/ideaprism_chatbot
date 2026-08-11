@@ -1,7 +1,11 @@
 # 인수인계 — 다음 세션에서 이어서 할 일
 
 **갱신: 2026-08-11** · 새 대화창에서 작업을 이어받기 위한 문서.
-[CLAUDE.md](CLAUDE.md) → [PRD.md](PRD.md) → 이 문서 순으로 읽으면 된다.
+[CLAUDE.md](CLAUDE.md) → [ECOSYSTEM.md](ECOSYSTEM.md) → [PRD.md](PRD.md) → 이 문서 순으로 읽으면 된다.
+
+> **이 저장소는 세 서비스 중 하나다.** 1.0(자료 창고)·2.0(여기)·3.0(교사 관제탑)이
+> 같은 Supabase를 본다. 무엇을 고치기 전에 [ECOSYSTEM.md](ECOSYSTEM.md) 5장
+> 「영향 지도」에서 어디가 함께 흔들리는지 확인할 것.
 
 지금 상태: **P0~P5 + 추가 기능 구현 완료, GitHub·Vercel 배포까지 끝남.**
 아래 4가지가 다음 세션의 일이다.
