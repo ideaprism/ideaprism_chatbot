@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCharacter, normalizeEmotion, type CharacterId } from "@/lib/characters";
 import type { EmotionMark } from "@/lib/emotion";
 import { canRevisit, revisitStage, STAGES, type StageId } from "@/lib/quest";
-import { createSession } from "@/lib/session";
+import { createSession, SESSION_STORAGE_KEY } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
 import type { ChatEvent, ChatMessage, SessionState } from "@/types/chat";
 import type { ProviderId } from "@/lib/ai/types";
@@ -48,7 +48,6 @@ type RunFn = (
   options?: RunOptions,
 ) => Promise<void>;
 
-const STORAGE_KEY = "ideaprism:session";
 /** 서버로 되돌려 보낼 최근 대화 턴 수 */
 const HISTORY_TURNS = 24;
 
@@ -95,7 +94,7 @@ export function useChat() {
     setSession(next);
     try {
       sessionStorage.setItem(
-        STORAGE_KEY,
+        SESSION_STORAGE_KEY,
         JSON.stringify({ session: next, messages: messagesRef.current }),
       );
     } catch {
@@ -271,7 +270,7 @@ export function useChat() {
   const bootstrap = useCallback(() => {
     let restored: { session: SessionState; messages: ChatMessage[] } | null = null;
     try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
+      const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
       if (raw) restored = JSON.parse(raw);
     } catch {
       restored = null;
@@ -324,7 +323,7 @@ export function useChat() {
   const restart = useCallback(
     (provider?: ProviderId | null) => {
       try {
-        sessionStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
       } catch {
         /* 무시 */
       }

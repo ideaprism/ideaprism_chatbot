@@ -1,10 +1,28 @@
 @import "tailwindcss";
 
 :root {
+  /* 대화 화면 — 종이 같은 따뜻한 바탕 */
   --background: #fbfaf7;
   --foreground: #1f1d1a;
   --panel: #ffffff;
   --line: #e8e4dc;
+
+  /*
+   * 1.0 디자인 토큰 — 랜딩페이지가 쓴다.
+   * 1.0(`클맥_ideaprism/src/app/globals.css`)의 값을 그대로 옮겼다.
+   * 학생이 1.0에서 보던 얼굴과 다르게 보이면 안 되므로 색값을 고치지 말 것.
+   */
+  --primary: #0066ff;
+  --on-primary: #ffffff;
+  --primary-container: #e6f0ff;
+  --surface: #ffffff;
+  --on-surface: #0f172a;
+  --surface-variant: #f1f5f9;
+  --on-surface-variant: #475569;
+  --outline: #94a3b8;
+  --outline-variant: #cbd5e1;
+  /* 1.0 의 페이지 바탕색 (slate-50). 대화 화면의 --background 와는 다르다 */
+  --prism-canvas: #f8fafc;
 }
 
 @theme inline {
@@ -12,6 +30,17 @@
   --color-foreground: var(--foreground);
   --color-panel: var(--panel);
   --color-line: var(--line);
+
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-primary-container: var(--primary-container);
+  --color-surface: var(--surface);
+  --color-on-surface: var(--on-surface);
+  --color-surface-variant: var(--surface-variant);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+  --color-prism-canvas: var(--prism-canvas);
 }
 
 html,

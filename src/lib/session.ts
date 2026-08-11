@@ -2,6 +2,12 @@ import type { ProviderId } from "./ai/types";
 import { initialQuestState, STAGES, type StageId } from "./quest";
 import type { NoteEntry, SessionState } from "@/types/chat";
 
+/**
+ * 진행 중인 대화가 담기는 자리 (브라우저 sessionStorage).
+ * 대화 화면이 쓰고, 랜딩페이지가 "이어서 하기"를 보여 줄지 판단할 때 읽는다.
+ */
+export const SESSION_STORAGE_KEY = "ideaprism:session";
+
 /** 새 세션 (익명 — 별명만 받는다) */
 export function createSession(provider: ProviderId | null = null): SessionState {
   return {

@@ -310,7 +310,7 @@ function Editor() {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href="/"
+            href="/chat"
             className="rounded-full border border-line bg-white px-3 py-1 text-xs text-neutral-600 hover:border-neutral-300"
           >
             학생 화면 보기

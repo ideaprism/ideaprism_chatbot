@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, NotebookPen, ScrollText, Search, Undo2 } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { getCharacter } from "@/lib/characters";
@@ -45,10 +46,10 @@ export function ProgressRail({
   return (
     <header className="no-print sticky top-0 z-20 border-b border-line bg-panel/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3">
-        <div className="flex items-baseline gap-2">
+        <Link href="/" className="flex items-baseline gap-2" title="첫 화면으로">
           <span className="text-sm font-bold tracking-tight">IdeaPrism</span>
           <span className="text-[11px] text-neutral-400">2.0 프로토타입</span>
-        </div>
+        </Link>
 
         <ol className="flex flex-1 flex-wrap items-center gap-1">
           {steps.map((step) => {
