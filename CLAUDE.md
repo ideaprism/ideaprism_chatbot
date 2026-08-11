@@ -44,13 +44,20 @@
 
 ## 시작 상태 (2026-08-11 갱신)
 
-P0~P5 전부 구현 완료. 그 위에 두 가지가 더 붙었다:
+P0~P5 전부 구현 완료. **GitHub·Vercel 배포까지 끝났다.**
+https://ideaprism-chatbot.vercel.app · https://github.com/ideaprism/ideaprism_chatbot
 
-- **모델 3사 비교** — Claude·OpenAI·Gemini 어댑터. 화면 상단에서 골라 비교 (대화 도중 교체 금지)
-- **`flow/` 폴더** — 대화 흐름 지침을 대표님이 직접 고치는 텍스트 파일로 분리
+그 위에 붙은 것:
+
+- **모델 3사 비교** — Claude·OpenAI·Gemini 어댑터 (대화 도중 교체 금지)
+- **`flow/` 폴더** — 대화 흐름 지침을 텍스트 파일로 분리
   (`personas/`는 "어떻게 말하는가", `flow/`는 "어떻게 흘러가는가")
+- **우측 패널을 1.0 화면에 맞춤** — 갤러리·상세보기·특허검색(OPSME)
+- **관리자 페이지 `/admin`** — 캐릭터 대본·대화 흐름을 브라우저에서 편집
+  (파일=공장 초기값, Supabase=고친 값. 접근 코드로 잠금)
 
-검증 상태·다음 할 일·1.0 참고 코드 위치는 [HANDOFF.md](HANDOFF.md)에 있다.
+**다음 세션의 일 4가지**(감정 이미지, 랜딩페이지, 시나리오 플랫폼, 관리자 확장)와
+굳힌 결정·함정 모음은 전부 [HANDOFF.md](HANDOFF.md)에 있다. **새 세션이면 그것부터 읽을 것.**
 
 <!-- BEGIN:nextjs-agent-rules -->
 
