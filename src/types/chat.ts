@@ -68,11 +68,14 @@ export interface ChatRequest {
   message: string | null;
   /**
    * message가 null일 때 어떤 상황인지.
-   * opening = 세션 시작, handoff = 배턴터치 직후 새 캐릭터 등장
+   * opening = 세션 시작, handoff = 배턴터치 직후 새 캐릭터 등장,
+   * revisit = 학생이 진행판을 눌러 앞 단계로 되돌아옴
    */
-  intent?: "opening" | "handoff";
+  intent?: "opening" | "handoff" | "revisit";
   /** 배턴터치일 때 물러난 캐릭터 (등장 대사에 쓰인다) */
   handoffFrom?: CharacterId | null;
+  /** 되돌아왔을 때 어느 단계에서 왔는지 (맞이하는 말에 쓰인다) */
+  revisitFrom?: StageId | null;
   /** 최근 대화 이력 (오래된 턴은 클라이언트가 잘라 보낸다) */
   history: Array<{ role: "user" | "assistant"; text: string }>;
 }

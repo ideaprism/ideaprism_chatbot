@@ -12,7 +12,7 @@
 
 import type { AiMessage } from "./ai/types";
 import { emotionNames, getCharacter, type CharacterId } from "./characters";
-import { STAGES, type QuestState } from "./quest";
+import { STAGES, type QuestState, type StageId } from "./quest";
 import type { PatentSnapshot } from "@/types/kipris";
 import type { SearchSnapshot } from "@/types/search";
 
@@ -256,6 +256,26 @@ export function handoffTurn(ctx: TurnContext, entranceCue: string): AiMessage {
   return {
     role: "user",
     content: `${entranceCue}\n\n${buildTurnBriefing(ctx)}`,
+  };
+}
+
+/**
+ * 학생이 진행판을 눌러 앞 단계로 되돌아왔을 때.
+ *
+ * 처음 만나는 게 아니라 "다시 온" 것이므로 자기소개를 되풀이하지 않는다.
+ * 그때 무엇을 정리했는지는 운영지침의 노트 요지에 들어 있다.
+ */
+export function revisitTurn(ctx: TurnContext, previousStage: StageId): AiMessage {
+  const stage = STAGES[ctx.quest.currentStage];
+  return {
+    role: "user",
+    content:
+      `(학생이 진행판을 눌러 ${previousStage}단계에서 ${stage.id}단계 「${stage.label}」로 ` +
+      "돌아왔다. 처음 만나는 게 아니니 자기소개는 하지 말고, 반갑게 맞으며 " +
+      "그때 함께 정리했던 것을 한 줄로 짚어 준 뒤, 무엇이 궁금해서 왔는지 물어라. " +
+      "학생이 내용을 고치고 싶어 하면 다시 정리해 주고, 그냥 확인만 하러 온 것이면 " +
+      "설명만 해 주면 된다. 위 단계에서 이미 한 이야기를 없던 일로 만들지 않는다.)\n\n" +
+      buildTurnBriefing(ctx),
   };
 }
 

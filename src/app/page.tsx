@@ -35,6 +35,8 @@ export default function Home() {
     clearFilters,
     focusInvention,
     applyPatentResult,
+    goToStage,
+    searchByStudent,
   } = useChat();
 
   if (!session) {
@@ -60,6 +62,7 @@ export default function Home() {
         onToggleFilter={toggleFilter}
         onClearFilters={clearFilters}
         onFocus={focusInvention}
+        onSearch={searchByStudent}
       />
     ) : activePanel === "note" ? (
       <NotePanel session={session} />
@@ -89,6 +92,8 @@ export default function Home() {
         activePanel={activePanel}
         onSelectPanel={setActivePanel}
         available={{ search: canSearch, note: hasNote, patent: canPatent }}
+        onGoToStage={goToStage}
+        canGoBack={!streaming}
         providerPicker={
           <ProviderPicker
             providers={providers}

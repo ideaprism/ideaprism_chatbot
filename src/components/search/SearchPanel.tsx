@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutGrid, List, X } from "lucide-react";
+import { LayoutGrid, List, Loader2, Search, TriangleAlert, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { InventionCard } from "./InventionCard";
@@ -37,12 +37,15 @@ export function SearchPanel({
   onToggleFilter,
   onClearFilters,
   onFocus,
+  onSearch,
 }: {
   snapshot: SearchSnapshot;
   results: SearchResults;
   onToggleFilter: (kind: FilterKind, value: string) => void;
   onClearFilters: () => void;
   onFocus: (id: string | null) => void;
+  /** 학생이 직접 검색 — 오류 문구를 돌려주고, 잘되면 null */
+  onSearch: (keyword: string) => Promise<string | null>;
 }) {
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [view, setView] = useState<ViewMode>("grid");
@@ -72,6 +75,9 @@ export function SearchPanel({
   // relative — 상세 모달이 이 상자 안에만 얹히도록. 화면 전체를 덮으면 대화창이 가려진다.
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* 학생이 직접 찾아보는 검색창 — 0~4단계는 학생이 주도한다 */}
+      <SearchBox keyword={snapshot.keyword} onSearch={onSearch} />
+
       {/* 통계 머리말 + 보기 전환 */}
       <div className="border-b border-line px-5 py-4">
         <div className="flex items-baseline justify-between gap-3">
@@ -104,7 +110,12 @@ export function SearchPanel({
       {/* 필터 칩 */}
       <div className="border-b border-line px-5 py-3">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-neutral-500">필터</span>
+          <span className="text-[11px] font-semibold text-neutral-500">
+            필터
+            <span className="ml-1.5 font-normal text-neutral-400">
+              눌러서 직접 좁혀 보세요
+            </span>
+          </span>
           {activeCount > 0 && (
             <button
               type="button"
@@ -186,6 +197,69 @@ export function SearchPanel({
           categoryName={categoryNameOf(focused)}
           onClose={() => onFocus(null)}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 학생이 직접 검색어를 바꿔 보는 칸.
+ *
+ * 0~4단계에서는 선배가 대신 검색해 주지 않는다. 방법만 알려 주고 학생이 눌러 본다.
+ * 여기서 찾은 결과도 세션에 실리므로 다음 턴에 선배가 같은 화면을 본다.
+ */
+function SearchBox({
+  keyword,
+  onSearch,
+}: {
+  keyword: string;
+  onSearch: (keyword: string) => Promise<string | null>;
+}) {
+  const [draft, setDraft] = useState(keyword);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    const text = draft.trim();
+    if (!text || loading) return;
+    setLoading(true);
+    setError(await onSearch(text));
+    setLoading(false);
+  };
+
+  return (
+    <div className="border-b border-line bg-neutral-50 px-5 py-3">
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) void run();
+          }}
+          placeholder="찾고 싶은 낱말 (예: 우산 보관)"
+          aria-label="선배들의 발명 검색"
+          className="min-w-0 flex-1 rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-neutral-400"
+        />
+        <button
+          type="button"
+          onClick={() => void run()}
+          disabled={loading || !draft.trim()}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-neutral-900 px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-neutral-700 disabled:bg-neutral-300"
+        >
+          {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+          찾기
+        </button>
+      </div>
+
+      {error ? (
+        <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-800">
+          <TriangleAlert className="mt-px size-3.5 shrink-0" />
+          {error}
+        </p>
+      ) : (
+        <p className="mt-1.5 text-[11px] text-neutral-400">
+          낱말을 바꿔 직접 찾아볼 수 있어요. 막히면 선배에게 물어보세요.
+        </p>
       )}
     </div>
   );

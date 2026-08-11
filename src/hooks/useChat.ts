@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getCharacter, normalizeEmotion, type CharacterId } from "@/lib/characters";
-import { STAGES } from "@/lib/quest";
+import { canRevisit, revisitStage, STAGES, type StageId } from "@/lib/quest";
 import { createSession } from "@/lib/session";
 import type { ToolName } from "@/lib/tools";
 import type { ChatEvent, ChatMessage, SessionState } from "@/types/chat";
@@ -32,8 +32,10 @@ export type FilterKind = "grades" | "problemTags" | "scamper";
 export type PanelKind = "search" | "note" | "patent";
 
 interface RunOptions {
-  intent?: "opening" | "handoff";
+  intent?: "opening" | "handoff" | "revisit";
   handoffFrom?: CharacterId | null;
+  /** 되돌아왔을 때 어느 단계에서 왔는지 */
+  revisitFrom?: StageId | null;
   /** 배턴터치 자동 이어달리기 깊이 — 무한 연쇄 방지 */
   depth?: number;
 }
@@ -145,6 +147,7 @@ export function useChat() {
             message: userText,
             intent: options.intent,
             handoffFrom: options.handoffFrom ?? null,
+            revisitFrom: options.revisitFrom ?? null,
             history,
           }),
         });
@@ -385,6 +388,26 @@ export function useChat() {
   const dismissHandoff = useCallback(() => setHandoff(null), []);
 
   /**
+   * 진행판을 눌러 앞 단계로 되돌아간다.
+   *
+   * 아직 가 보지 않은 단계로는 갈 수 없다(건너뛰기 차단은 그대로).
+   * 지나온 자리(furthestStage)는 남아 있으므로 언제든 원래 단계로 되돌아올 수 있고,
+   * 그때까지 적어 둔 발명노트도 지워지지 않는다.
+   */
+  const goToStage = useCallback(
+    (stage: StageId) => {
+      const current = sessionRef.current;
+      if (!current || streaming || !canRevisit(current.quest, stage)) return;
+
+      const from = current.quest.currentStage;
+      const next: SessionState = { ...current, quest: revisitStage(current.quest, stage) };
+      syncSession(next);
+      void run(null, next, { intent: "revisit", revisitFrom: from });
+    },
+    [run, streaming, syncSession],
+  );
+
+  /**
    * 필터 칩 클릭 — 서버 왕복 없이 즉시 반영한다(PRD 8장: 체감 0.1초).
    * 바뀐 필터는 세션에 담기므로, 다음 대화 요청 때 AI도 같은 상태를 보게 된다
    * (PRD S-4: 클릭과 채팅 명령이 양쪽으로 동기화).
@@ -406,6 +429,49 @@ export function useChat() {
           filters: { ...current.search.filters, [kind]: nextValues },
         },
       });
+    },
+    [syncSession],
+  );
+
+  /**
+   * 학생이 우측 패널에서 직접 검색했을 때 (0~4단계는 학생이 주도한다).
+   *
+   * AI를 거치지 않으므로 호출 비용이 들지 않는다. 바뀐 결과는 세션에 실려
+   * 다음 턴에 선배도 학생이 방금 본 것과 같은 화면을 본다 (PRD S-4).
+   */
+  const searchByStudent = useCallback(
+    async (keyword: string): Promise<string | null> => {
+      const current = sessionRef.current;
+      if (!current) return null;
+
+      try {
+        const response = await fetch("/api/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keyword, sessionId: current.sessionId }),
+        });
+        const data = await response.json();
+        if (!response.ok) return data?.error ?? "검색에 실패했어요.";
+
+        setResults({ rows: data.rows, grades: data.grades, categories: data.categories });
+        syncSession({
+          ...current,
+          search: {
+            keyword: data.keyword,
+            totalCount: data.totalCount,
+            loadedCount: data.loadedCount,
+            filters: { grades: [], problemTags: [], scamper: [] },
+            availableGrades: data.availableGrades,
+            availableProblemTags: data.availableProblemTags,
+            availableScamper: data.availableScamper,
+            focusedId: null,
+          },
+        });
+        setActivePanel("search");
+        return null;
+      } catch {
+        return "검색 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.";
+      }
     },
     [syncSession],
   );
@@ -452,5 +518,7 @@ export function useChat() {
     clearFilters,
     focusInvention,
     applyPatentResult,
+    goToStage,
+    searchByStudent,
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { SendHorizontal } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -16,6 +16,17 @@ export function Composer({
 }) {
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * 캐릭터의 말이 끝나면 커서를 입력창으로 되돌린다.
+   *
+   * 말하는 동안에는 입력창이 잠기는데(disabled), 잠기는 순간 브라우저가 포커스를
+   * 빼앗아 다른 곳으로 보낸다. 그대로 두면 학생이 답하려 할 때마다 마우스로
+   * 입력창을 다시 눌러야 한다.
+   */
+  useEffect(() => {
+    if (!disabled) ref.current?.focus();
+  }, [disabled]);
 
   const submit = () => {
     const text = value.trim();

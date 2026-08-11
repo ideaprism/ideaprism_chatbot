@@ -1,10 +1,10 @@
 "use client";
 
-import { Check, NotebookPen, ScrollText, Search } from "lucide-react";
+import { Check, NotebookPen, ScrollText, Search, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { getCharacter } from "@/lib/characters";
-import { progressView, STAGES, type QuestState } from "@/lib/quest";
+import { progressView, STAGES, type QuestState, type StageId } from "@/lib/quest";
 import { cn } from "@/lib/utils";
 import type { PanelKind } from "@/hooks/useChat";
 
@@ -25,6 +25,8 @@ export function ProgressRail({
   onSelectPanel,
   available,
   providerPicker,
+  onGoToStage,
+  canGoBack,
 }: {
   quest: QuestState;
   activePanel: PanelKind | null;
@@ -32,6 +34,10 @@ export function ProgressRail({
   available: Record<PanelKind, boolean>;
   /** 모델 비교용 선택기 (PRD 7장) */
   providerPicker?: ReactNode;
+  /** 지나온 단계를 눌러 되돌아가기 */
+  onGoToStage: (stage: StageId) => void;
+  /** 말하는 중에는 되돌아갈 수 없다 */
+  canGoBack: boolean;
 }) {
   const steps = progressView(quest);
   const character = getCharacter(STAGES[quest.currentStage].character);
@@ -45,10 +51,20 @@ export function ProgressRail({
         </div>
 
         <ol className="flex flex-1 flex-wrap items-center gap-1">
-          {steps.map((step) => (
+          {steps.map((step) => {
+            // 지나온 단계는 눌러서 되돌아갈 수 있다. 아직 안 가 본 단계는 못 누른다.
+            const clickable = step.revisitable && canGoBack;
+            return (
             <li key={step.id} className="flex items-center gap-1">
-              <div
-                title={step.doneWhen}
+              <button
+                type="button"
+                disabled={!clickable}
+                onClick={() => onGoToStage(step.id)}
+                title={
+                  clickable
+                    ? `${step.id}단계로 돌아가서 다시 이야기하기 — ${step.doneWhen}`
+                    : step.doneWhen
+                }
                 className={cn(
                   "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
                   step.status === "done" &&
@@ -57,6 +73,9 @@ export function ProgressRail({
                     "border-neutral-800 bg-neutral-900 font-semibold text-white",
                   step.status === "todo" &&
                     "border-line bg-white text-neutral-400",
+                  clickable
+                    ? "cursor-pointer hover:brightness-95"
+                    : "cursor-default",
                 )}
               >
                 {step.status === "done" ? (
@@ -65,7 +84,8 @@ export function ProgressRail({
                   <span className="tabular-nums">{step.id}</span>
                 )}
                 <span>{step.label}</span>
-              </div>
+                {clickable && <Undo2 className="size-3 opacity-50" />}
+              </button>
               {step.id < 5 && (
                 <span
                   aria-hidden
@@ -76,7 +96,8 @@ export function ProgressRail({
                 />
               )}
             </li>
-          ))}
+            );
+          })}
         </ol>
 
         <p className="text-xs text-neutral-500">

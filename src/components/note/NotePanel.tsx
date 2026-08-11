@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Printer } from "lucide-react";
+import { Check, History, Printer } from "lucide-react";
+import { useState } from "react";
 
 import { getCharacter } from "@/lib/characters";
 import { isComplete, STAGES, STAGE_IDS, type StageId } from "@/lib/quest";
@@ -110,6 +111,8 @@ function StageEntry({ stage, session }: { stage: StageId; session: SessionState 
 
   const character = getCharacter(definition.character);
   const fields = artifact ? Object.entries(artifact) : [];
+  // 앞서 적었다가 고쳐 쓴 것들 — 시행착오도 발명 과정이라 본문 아래에 남긴다
+  const earlier = (session.quest.history?.[stage] ?? []) as Array<Record<string, unknown>>;
 
   return (
     <section
@@ -136,25 +139,65 @@ function StageEntry({ stage, session }: { stage: StageId; session: SessionState 
       )}
 
       {fields.length > 0 ? (
-        <dl className="space-y-1 text-xs leading-relaxed">
-          {fields.map(([key, value]) => {
-            const text = formatValue(key, value);
-            if (!text) return null;
-            return (
-              <div key={key} className="flex gap-2">
-                <dt className="w-24 shrink-0 text-neutral-400">
-                  {FIELD_LABELS[key] ?? key}
-                </dt>
-                <dd className="min-w-0 flex-1">{text}</dd>
-              </div>
-            );
-          })}
-        </dl>
+        <FieldList fields={fields} />
       ) : (
         !note && (
           <p className="text-xs text-neutral-400">{definition.doneWhen}</p>
         )
       )}
+
+      {earlier.length > 0 && <EarlierAttempts attempts={earlier} />}
     </section>
+  );
+}
+
+function FieldList({ fields }: { fields: Array<[string, unknown]> }) {
+  return (
+    <dl className="space-y-1 text-xs leading-relaxed">
+      {fields.map(([key, value]) => {
+        const text = formatValue(key, value);
+        if (!text) return null;
+        return (
+          <div key={key} className="flex gap-2">
+            <dt className="w-24 shrink-0 text-neutral-400">{FIELD_LABELS[key] ?? key}</dt>
+            <dd className="min-w-0 flex-1">{text}</dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+/**
+ * 고쳐 쓰기 전에 적었던 것들.
+ *
+ * 앞 단계로 돌아가 다시 정리하면 본문은 최종본으로 바뀌지만, 처음에 어떻게
+ * 생각했는지도 발명 과정의 일부다. 접어 두었다가 펼쳐 볼 수 있게 남긴다.
+ */
+function EarlierAttempts({ attempts }: { attempts: Array<Record<string, unknown>> }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mt-3 border-t border-dashed border-line pt-2">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-700"
+      >
+        <History className="size-3" />
+        고치기 전 기록 {attempts.length}개 {open ? "접기" : "펼치기"}
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-2">
+          {attempts.map((attempt, index) => (
+            <div key={index} className="rounded-lg bg-neutral-50 px-3 py-2">
+              <p className="mb-1 text-[10px] text-neutral-400">{index + 1}번째로 적었던 내용</p>
+              <FieldList fields={Object.entries(attempt)} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

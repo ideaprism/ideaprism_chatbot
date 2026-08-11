@@ -13,7 +13,13 @@ import type { SessionState } from "@/types/chat";
 export interface StageRecord {
   label: string;
   summary: string | null;
+  /** 최종본 — 발명노트의 본문이 되는 값 */
   artifact: unknown;
+  /**
+   * 앞서 적었다가 고쳐 쓴 것들 (오래된 것부터).
+   * 시행착오도 발명 과정의 일부라 버리지 않고 본문 아래에 참고로 남긴다.
+   */
+  earlierAttempts: unknown[];
   /** 이 단계에 머문 시간(ms). 다음 단계로 넘어가야 확정된다. */
   dwellMs: number | null;
   /** 완료 신청이 반려된 횟수 */
@@ -51,6 +57,7 @@ export function buildStagePayload(
       label: STAGES[stage].label,
       summary: note?.summary ?? null,
       artifact: artifact ?? note?.details ?? null,
+      earlierAttempts: quest.history?.[stage] ?? [],
       dwellMs: dwellOf(session, stage, now),
       retries: quest.retries[stage] ?? 0,
     };

@@ -20,6 +20,7 @@ import {
   normalizeHistory,
   OFF_TOPIC_LIMIT,
   openingTurn,
+  revisitTurn,
   userTurnWithBriefing,
   type TurnContext,
 } from "@/lib/prompt";
@@ -137,7 +138,9 @@ export async function POST(request: Request) {
             session.quest.currentStage,
           ),
         )
-      : openingTurn(ctx);
+      : body.intent === "revisit"
+        ? revisitTurn(ctx, body.revisitFrom ?? session.quest.currentStage)
+        : openingTurn(ctx);
 
   const messages: AiMessage[] = [
     ...history,

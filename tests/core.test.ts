@@ -12,7 +12,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { advanceStage, initialQuestState, STAGES } from "../src/lib/quest";
+import {
+  advanceStage,
+  canRevisit,
+  initialQuestState,
+  revisitStage,
+  STAGES,
+} from "../src/lib/quest";
 import {
   buildSystemPrompt,
   COMPACTED_MARKER,
@@ -188,6 +194,87 @@ test("특허가 나왔는데 한 건도 안 적으면 막는다", () => {
 
   assert.equal(result.ok, false);
   assert.ok(result.message.includes("similarPatents"), result.message);
+});
+
+// ── 앞 단계로 되돌아가기 ─────────────────────────────────────
+//
+// 학생이 진행판을 눌러 지나온 단계로 돌아가 다시 이야기할 수 있다.
+// 아직 안 가 본 단계로 건너뛰는 것은 여전히 막는다.
+
+/** 0단계를 마치고 1단계에 있는 상태 */
+function afterStageZero() {
+  return advanceStage(
+    initialQuestState(0),
+    0,
+    { nickname: "민준", interests: ["우산"], matchedCharacter: "jiyou" },
+    0,
+  ).state;
+}
+
+test("지나온 단계로는 돌아갈 수 있다", () => {
+  const state = afterStageZero();
+  assert.equal(canRevisit(state, 0), true);
+
+  const back = revisitStage(state, 0, 100);
+  assert.equal(back.currentStage, 0);
+  assert.equal(back.furthestStage, 1, "가 있던 자리는 그대로 기억한다");
+  assert.ok(back.completed[0], "돌아가도 기록은 지우지 않는다");
+});
+
+test("아직 가 보지 않은 단계로는 건너뛸 수 없다", () => {
+  const state = afterStageZero();
+  assert.equal(canRevisit(state, 3), false);
+  assert.equal(revisitStage(state, 3, 100).currentStage, 1, "그 자리에 그대로 있다");
+});
+
+test("지금 있는 단계는 되돌아갈 대상이 아니다", () => {
+  assert.equal(canRevisit(afterStageZero(), 1), false);
+});
+
+test("되돌아가 다시 정리하면 최종본이 바뀌고 앞서 적은 것은 참고로 남는다", () => {
+  const back = revisitStage(afterStageZero(), 0, 100);
+  const again = advanceStage(
+    back,
+    0,
+    { nickname: "초코", interests: ["우산", "환경"], matchedCharacter: "jiyou" },
+    200,
+  );
+
+  assert.equal(again.ok, true, again.message);
+  assert.deepEqual(
+    (again.state.completed[0] as { nickname: string }).nickname,
+    "초코",
+    "최종본이 본문이 된다",
+  );
+  assert.equal(again.state.history[0]?.length, 1, "앞서 적은 것이 참고로 남는다");
+  assert.equal(
+    (again.state.history[0]?.[0] as { nickname: string }).nickname,
+    "민준",
+  );
+});
+
+test("되돌아가 다시 완료해도 가 있던 자리는 내려가지 않는다", () => {
+  // 0→1→2 까지 간 뒤 0단계로 돌아와 다시 완료
+  let state = afterStageZero();
+  state = advanceStage(
+    state,
+    1,
+    { problemArea: "우산", observations: ["바닥이 젖는다"] },
+    0,
+  ).state;
+  assert.equal(state.furthestStage, 2);
+
+  const back = revisitStage(state, 0, 100);
+  const again = advanceStage(
+    back,
+    0,
+    { nickname: "초코", interests: ["우산"], matchedCharacter: "jiyou" },
+    200,
+  );
+
+  assert.equal(again.state.currentStage, 1, "다시 완료하면 그다음 단계로 간다");
+  assert.equal(again.state.furthestStage, 2, "2단계까지 갔던 것은 그대로 기억한다");
+  assert.equal(canRevisit(again.state, 2), true, "진행판에서 2단계로 되돌아올 수 있다");
 });
 
 test("0단계부터 5단계까지 완주하면 캐릭터가 두 번 바뀐다", () => {

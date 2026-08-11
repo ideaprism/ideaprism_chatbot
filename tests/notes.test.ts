@@ -34,6 +34,8 @@ test("단계 요약과 산출물이 함께 담긴다", () => {
       },
       enteredAt: { 0: 1000, 1: 5000, 2: 9000 },
       retries: {},
+      furthestStage: 5,
+      history: {},
     },
   });
 
@@ -54,6 +56,8 @@ test("막힘 신호: 체류 시간과 반려 횟수가 남는다", () => {
       completed: { 0: { nickname: "민준" }, 1: { problemArea: "우산" } },
       enteredAt: { 0: 1_000, 1: 5_000, 2: 20_000 },
       retries: { 1: 3 },
+      furthestStage: 5,
+      history: {},
     },
   });
 
@@ -72,6 +76,8 @@ test("아직 진행 중인 단계는 체류 시간을 확정하지 않는다", (
       completed: { 0: { nickname: "민준" } },
       enteredAt: { 0: 1_000, 1: 5_000 },
       retries: {},
+      furthestStage: 5,
+      history: {},
     },
   });
 

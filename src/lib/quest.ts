@@ -283,15 +283,66 @@ export const STAGES: Record<StageId, StageDefinition> = {
 
 export interface QuestState {
   currentStage: StageId;
-  /** 완료한 단계별 산출물 */
+  /** 완료한 단계별 산출물 (최종본) */
   completed: Partial<Record<StageId, unknown>>;
+  /**
+   * 지금까지 도달한 가장 먼 단계.
+   * 앞 단계로 돌아가 다시 이야기해도 여기는 내려가지 않으므로,
+   * 진행판에서 원래 자리로 언제든 되돌아올 수 있다.
+   */
+  furthestStage: StageId;
+  /**
+   * 같은 단계를 다시 정리했을 때 밀려난 이전 산출물들 (오래된 것부터).
+   * 시행착오도 발명 과정의 일부라 버리지 않고 발명노트에 참고로 남긴다.
+   */
+  history: Partial<Record<StageId, unknown[]>>;
   /** 막힘 신호 (PRD F-6): 단계별 진입 시각과 승급 재시도 횟수 */
   enteredAt: Partial<Record<StageId, number>>;
   retries: Partial<Record<StageId, number>>;
 }
 
 export function initialQuestState(now: number = Date.now()): QuestState {
-  return { currentStage: 0, completed: {}, enteredAt: { 0: now }, retries: {} };
+  return {
+    currentStage: 0,
+    completed: {},
+    furthestStage: 0,
+    history: {},
+    enteredAt: { 0: now },
+    retries: {},
+  };
+}
+
+/**
+ * 도달한 가장 먼 단계.
+ * 이 값이 생기기 전에 저장된 세션(sessionStorage)도 있으므로 현재 단계로 메운다.
+ */
+export function furthestOf(state: QuestState): StageId {
+  return state.furthestStage ?? state.currentStage;
+}
+
+/** 이미 지나온 단계인가 — 진행판에서 눌러 되돌아갈 수 있는가 */
+export function canRevisit(state: QuestState, stage: StageId): boolean {
+  return stage <= furthestOf(state) && stage !== state.currentStage;
+}
+
+/**
+ * 앞 단계로 되돌아간다 (학생이 진행판을 눌렀을 때).
+ *
+ * 아직 가 보지 않은 단계로는 갈 수 없다 — 건너뛰기는 여전히 막는다(원칙 2).
+ * 기록은 아무것도 지우지 않는다. 다시 정리하면 그때 갱신된다.
+ */
+export function revisitStage(
+  state: QuestState,
+  stage: StageId,
+  now: number = Date.now(),
+): QuestState {
+  if (!canRevisit(state, stage)) return state;
+  return {
+    ...state,
+    currentStage: stage,
+    furthestStage: furthestOf(state),
+    enteredAt: { ...state.enteredAt, [stage]: now },
+  };
 }
 
 export function stageOf(state: QuestState): StageDefinition {
@@ -358,10 +409,21 @@ export function advanceStage(
   }
 
   const nextStage = (stage === FINAL_STAGE ? FINAL_STAGE : ((stage + 1) as StageId));
+
+  // 같은 단계를 다시 정리했다면 앞서 적었던 것을 참고로 남긴다 (시행착오도 기록)
+  const previous = state.completed[stage];
+  const history =
+    previous === undefined
+      ? state.history
+      : { ...state.history, [stage]: [...(state.history?.[stage] ?? []), previous] };
+
   const nextState: QuestState = {
     ...state,
     currentStage: nextStage,
     completed: { ...state.completed, [stage]: artifact },
+    history,
+    // 되돌아가 다시 완료한 경우, 원래 가 있던 자리는 그대로 기억한다
+    furthestStage: Math.max(furthestOf(state), nextStage) as StageId,
     enteredAt: { ...state.enteredAt, [nextStage]: now },
   };
 
@@ -407,5 +469,7 @@ export function progressView(state: QuestState) {
         : id === state.currentStage
           ? ("current" as const)
           : ("todo" as const),
+    /** 눌러서 되돌아갈 수 있는 단계인가 */
+    revisitable: canRevisit(state, id),
   }));
 }
