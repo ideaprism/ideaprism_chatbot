@@ -53,14 +53,25 @@ create index if not exists invention_notes_classroom_idx
   on public.invention_notes (classroom_id);
 
 -- ── 지금 쓰고 있는 입장코드를 첫 교실로 옮긴다 ──────────────
--- 오늘까지는 코드가 하나였습니다(관리자 「입장코드」). 그 코드를 교실 하나로 만들어
--- 두면, 이미 그 코드를 알고 계신 분들이 그대로 들어올 수 있습니다.
 --
--- ※ 관리자에서 코드를 바꾸셨다면 아래 '7117' 을 그 코드로 고쳐서 실행하세요.
---   (모르시면 관리자 → 입장코드 탭에서 눈 모양 아이콘을 누르면 보입니다)
+-- ⚠️ **이 부분이 없으면 아무도 못 들어오게 됩니다.**
+--   표가 생기는 순간부터 문은 "교실에 있는 코드"만 인정합니다. 지금 쓰시던 코드가
+--   교실 목록에 없으면 그 코드로는 못 들어옵니다.
+--
+-- 그래서 코드를 여기 적지 않고, **지금 저장돼 있는 값을 그대로 가져다** 씁니다.
+-- 대표님이 관리자에서 코드를 바꾸셨든 안 바꾸셨든 알아서 맞습니다.
+
+-- ① 관리자에서 바꾼 코드가 있으면 그것을 첫 교실로
 insert into public.classrooms (code, name)
-values ('7117', '첫 번째 교실')
+select trim(content), '첫 번째 교실'
+from public.prompt_overrides
+where kind = 'config' and name = '입장코드' and trim(content) <> ''
 on conflict (code) do nothing;
+
+-- ② 바꾼 적이 없으면(저장된 값이 없으면) 공장 초기값으로
+insert into public.classrooms (code, name)
+select '7117', '첫 번째 교실'
+where not exists (select 1 from public.classrooms);
 
 -- ── 접근 제어 ────────────────────────────────────────────────
 -- RLS를 켜고 정책을 만들지 않으면 브라우저 키로는 읽지도 쓰지도 못합니다.

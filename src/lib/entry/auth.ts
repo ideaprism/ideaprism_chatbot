@@ -33,7 +33,7 @@ import { cookies } from "next/headers";
 
 import { validateEntryCode } from "./rules";
 import { isAdmin } from "@/lib/admin/auth";
-import { classroomById, classroomByCode } from "@/lib/classroom/store";
+import { classroomById, classroomByCode, listClassrooms } from "@/lib/classroom/store";
 import {
   DEFAULT_ENTRY_CODE,
   ENTRY_CODE_NAME,
@@ -104,12 +104,20 @@ export async function checkEntryCode(
   if (candidate.length === 0) return { ok: false };
 
   const found = await classroomByCode(candidate);
-  if (found.ready) {
-    // 교실 표를 읽었다 — 그 안에 있는 코드만 인정한다
-    return found.value ? { ok: true, classroomId: found.value.id } : { ok: false };
-  }
+  if (found.ready && found.value) return { ok: true, classroomId: found.value.id };
 
-  // 교실 표를 못 읽었다 (아직 안 만들었거나 조회 실패) — 옛 방식으로
+  /**
+   * 옛 방식(코드 하나)으로 되돌아가도 되는 때는 둘뿐이다.
+   *   · 교실 표를 못 읽었다 — 아직 안 만들었거나 조회에 실패했다
+   *   · 표는 있는데 **쓸 수 있는 교실이 하나도 없다** — 다 지웠거나 다 꺼 두었다
+   *
+   * 둘 다 "교실이라는 개념이 아직 없는 상태"다. 이때까지 문을 잠가 버리면
+   * **아무도 못 들어온다.** 교실이 하나라도 생기는 순간 이 길은 저절로 닫힌다.
+   */
+  const rooms = await listClassrooms();
+  const noneYet = !rooms.ready || !rooms.value.some((room) => room.active);
+  if (!noneYet) return { ok: false };
+
   return sameSecret(candidate, await legacyEntryCode())
     ? { ok: true, classroomId: null }
     : { ok: false };
