@@ -20,7 +20,16 @@ export interface SaveResult {
   detail: string;
 }
 
-export async function saveNote(session: SessionState): Promise<SaveResult> {
+export async function saveNote(
+  session: SessionState,
+  /**
+   * 어느 교실 학생인가 — 3.0에서 선생님이 자기 반만 골라 보는 근거.
+   *
+   * **세션이 아니라 서명된 쿠키에서 온 값을 받는다.** 세션은 브라우저가 들고 다니는
+   * 값이라 학생이 남의 반으로 바꿔 적을 수 있다. 쿠키의 쪽지는 서버가 서명한 것이다.
+   */
+  classroomId: string | null = null,
+): Promise<SaveResult> {
   if (!process.env.SUPABASE_SECRET_KEY) {
     return { ok: false, detail: "SUPABASE_SECRET_KEY 미설정 — 저장 건너뜀" };
   }
@@ -36,6 +45,9 @@ export async function saveNote(session: SessionState): Promise<SaveResult> {
       .upsert(
         {
           session_id: session.sessionId,
+          // 교실을 모르면(관리자가 구경 중이거나 옛 쪽지) 칸을 건드리지 않는다 —
+          // 이미 적혀 있던 교실을 null 로 덮어써 선생님 화면에서 사라지면 안 된다
+          ...(classroomId ? { classroom_id: classroomId } : {}),
           nickname: session.nickname,
           matched_character: hostAt(session.cast, session.quest.currentStage),
           current_stage: session.quest.currentStage,

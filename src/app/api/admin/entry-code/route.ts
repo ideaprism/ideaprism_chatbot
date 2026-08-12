@@ -4,7 +4,7 @@ import { isAdmin } from "@/lib/admin/auth";
 import {
   ENTRY_CODE_MAX,
   ENTRY_CODE_MIN,
-  entryCode,
+  legacyEntryCode,
   isDefaultEntryCode,
   setEntryCode,
 } from "@/lib/entry/auth";
@@ -24,7 +24,7 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    code: await entryCode(),
+    code: await legacyEntryCode(),
     isDefault: await isDefaultEntryCode(),
     min: ENTRY_CODE_MIN,
     max: ENTRY_CODE_MAX,
@@ -62,7 +62,7 @@ export async function PUT(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    code: await entryCode(),
+    code: await legacyEntryCode(),
     isDefault: await isDefaultEntryCode(),
   });
 }

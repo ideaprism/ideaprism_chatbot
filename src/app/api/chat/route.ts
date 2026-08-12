@@ -27,7 +27,7 @@ import {
   type ParsedChunk,
   type TurnContext,
 } from "@/lib/prompt";
-import { hasEntered } from "@/lib/entry/auth";
+import { enteredClassroomId, hasEntered } from "@/lib/entry/auth";
 import { trackOf } from "@/lib/quest";
 import { stageAt } from "@/lib/track";
 import { isSessionState, noteDigest } from "@/lib/session";
@@ -57,6 +57,11 @@ export async function POST(request: Request) {
   if (!(await hasEntered())) {
     return fail("입장코드를 넣어야 대화를 시작할 수 있어요.", 401);
   }
+
+  // 이 학생이 어느 교실인가 (노트에 남을 값). **지금 꺼내 둔다** —
+  // 아래 노트 저장은 스트림이 끝날 무렵에 일어나고, 그때는 요청이 이미 떠나
+  // 쿠키를 읽을 수 없다.
+  const classroomId = await enteredClassroomId();
 
   let body: ChatRequest;
   try {
@@ -353,7 +358,7 @@ export async function POST(request: Request) {
 
         // 발명노트 저장은 뒷일이다. 실패해도 대화를 끊지 않고 서버 로그에만 남긴다.
         if (noteDirty) {
-          const saved = await saveNote(session);
+          const saved = await saveNote(session, classroomId);
           if (!saved.ok) console.warn("[chat] 발명노트 저장 실패:", saved.detail);
         }
 

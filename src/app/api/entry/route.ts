@@ -29,15 +29,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 });
   }
 
-  if (!(await checkEntryCode(code))) {
+  const checked = await checkEntryCode(code);
+  if (!checked.ok) {
     return NextResponse.json(
       { error: "입장코드가 맞지 않아요. 선생님께 코드를 다시 여쭤보세요." },
       { status: 401 },
     );
   }
 
+  // 쪽지에 "어느 교실인가"를 함께 담는다 — 나중에 노트에 남을 값이다
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(ENTRY_COOKIE, await issueEntryTicket(), {
+  response.cookies.set(ENTRY_COOKIE, await issueEntryTicket(checked.classroomId), {
     httpOnly: true,
     sameSite: "lax",
     path: "/",

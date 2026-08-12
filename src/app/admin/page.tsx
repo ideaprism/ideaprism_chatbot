@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { ClassroomTab } from "./ClassroomTab";
 import { EntryCodeTab } from "./EntryCodeTab";
 import { HealthTab } from "./HealthTab";
 import { UsageTab } from "./UsageTab";
@@ -78,6 +79,7 @@ export default function AdminPage() {
 const TABS = [
   { id: "prompts", label: "프롬프트", caption: "대화구조 · 캐릭터 대본 · 대화 흐름" },
   { id: "entry", label: "입장코드", caption: "학생이 첫 화면에서 넣는 코드" },
+  { id: "classroom", label: "교실·선생님", caption: "코드 하나가 교실 하나 · 담당 선생님" },
   { id: "usage", label: "이용내역", caption: "학생들이 남긴 발명노트" },
   { id: "health", label: "점검", caption: "무엇이 준비됐나" },
 ] as const;
@@ -138,6 +140,7 @@ function Console() {
 
       {tab === "prompts" && <Editor />}
       {tab === "entry" && <EntryCodeTab />}
+      {tab === "classroom" && <ClassroomTab />}
       {tab === "usage" && <UsageTab />}
       {tab === "health" && <HealthTab />}
     </main>
